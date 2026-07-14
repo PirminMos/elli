@@ -42,5 +42,25 @@ services:
       db:
         condition: service_healthy
 
+  # Automatische DB-Sicherung im Hintergrund. Laeuft still mit, schreibt
+  # rotierende Dumps nach ./backups. Zum Deaktivieren diesen Block entfernen.
+  backup:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      DB_HOST: "db"
+      DB_NAME: "${DB_NAME:-elli}"
+      DB_USER: "${DB_USER:-elli_user}"
+      DB_PASSWORD: "${DB_PASSWORD:-1234}"
+      BACKUP_INTERVAL: "${BACKUP_INTERVAL:-21600}"   # Standard: alle 6 Stunden
+      BACKUP_KEEP: "${BACKUP_KEEP:-28}"              # Standard: 28 Dateien behalten
+    volumes:
+      - ./backups:/backups
+      - ./docker/backup/backup-loop.sh:/backup-loop.sh:ro
+    entrypoint: ["sh", "/backup-loop.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   db_data:

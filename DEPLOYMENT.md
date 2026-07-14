@@ -135,3 +135,37 @@ Dump. Danach läuft die neue Instanz mit exakt den Daten des alten Servers.
 > Windows). `mariadb-dump` / `docker compose cp` erledigen Encoding und
 > Dateiübertragung – bitte **nicht** `docker exec … > datei.sql` in
 > PowerShell verwenden, das erzeugt UTF‑16 und beschädigt den Dump.
+
+---
+
+## Automatische Hintergrund-Backups
+
+Der Stack enthält einen kleinen `backup`-Container, der **still im
+Hintergrund** läuft und die Datenbank in Intervallen sichert – der Nutzer
+merkt davon nichts. Er startet automatisch mit `docker compose up -d`.
+
+- Ablage: Ordner `backups/` (auf dem Host, per `.gitignore` ausgenommen)
+- Dateiname: `elli-JJJJMMTT-HHMMSS.sql`
+- Sofort ein Backup beim Start, danach alle `BACKUP_INTERVAL` Sekunden
+- Rotation: nur die neuesten `BACKUP_KEEP` Dateien bleiben erhalten
+
+Standardwerte (in `.env` anpassbar):
+
+```
+BACKUP_INTERVAL=21600   # alle 6 Stunden
+BACKUP_KEEP=28          # 28 Dateien behalten (~1 Woche)
+```
+
+Prüfen, was der Backup-Dienst tut:
+
+```powershell
+docker compose logs -f backup
+```
+
+Ein solches Backup wieder einspielen (bei Bedarf):
+
+```bash
+./scripts/restore.sh backups/elli-20260714-202449.sql
+```
+
+Deaktivieren: den `backup`-Service-Block aus `docker-compose.yml` entfernen.
