@@ -100,3 +100,38 @@ mysqldump -u elli_user -p elli > docker/db/init/01-schema.sql
 
 Das Init-Skript läuft **nur bei leerem Daten-Volume** (erster Start bzw.
 nach `docker compose down -v`).
+
+---
+
+## Daten auf einen anderen Server umziehen
+
+Die Datenbank ist voll portabel. Für den Umzug gibt es zwei Skripte (im
+Ordner `scripts/`), die encoding-sicher arbeiten (der Dump entsteht *im*
+Container und wird per `docker compose cp` kopiert – so kann keine Shell,
+insbesondere PowerShell unter Windows, die Datei nach UTF‑16 umkodieren
+und Umlaute zerstören).
+
+**Auf dem alten Server – Backup ziehen:**
+
+```bash
+./scripts/backup.sh                 # -> elli-backup-JJJJMMTT-HHMMSS.sql
+```
+
+Die entstandene `.sql`-Datei auf den neuen Server kopieren (USB, scp, …).
+
+**Auf dem neuen Server – einspielen:**
+
+```bash
+git clone https://github.com/DEINUSER/elli.git
+cd elli
+docker compose up -d --build        # legt leere DB an
+./scripts/restore.sh elli-backup-20260714-153000.sql
+```
+
+Der Restore überschreibt die (leere) Ziel-Datenbank vollständig mit dem
+Dump. Danach läuft die neue Instanz mit exakt den Daten des alten Servers.
+
+> Windows-Hinweis: Die Skripte laufen in Git Bash (kommt mit Git für
+> Windows). `mariadb-dump` / `docker compose cp` erledigen Encoding und
+> Dateiübertragung – bitte **nicht** `docker exec … > datei.sql` in
+> PowerShell verwenden, das erzeugt UTF‑16 und beschädigt den Dump.
