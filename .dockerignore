@@ -1,0 +1,11 @@
+# Wird im Container neu installiert / gebaut:
+node_modules
+dist
+
+# Nicht relevant für den Build:
+.git
+.idea
+.vscode
+*.log
+.env
+npm-debug.log*

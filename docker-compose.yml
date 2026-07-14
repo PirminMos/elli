@@ -1,0 +1,46 @@
+# =====================================================================
+# elli – Gesamtstack: Web (Apache/PHP + Frontend) + MariaDB
+#
+#   Start:   docker compose up -d --build
+#   Öffnen:  http://localhost:8080
+#   Stop:    docker compose down          (Daten bleiben erhalten)
+#   Reset:   docker compose down -v       (löscht auch die DB!)
+# =====================================================================
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: "${DB_NAME:-elli}"
+      MARIADB_USER: "${DB_USER:-elli_user}"
+      MARIADB_PASSWORD: "${DB_PASSWORD:-1234}"
+      MARIADB_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:-rootpw}"
+    volumes:
+      - db_data:/var/lib/mysql
+      # Schema wird beim ERSTEN Start automatisch eingespielt (leeres Volume):
+      - ./docker/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:80"          # http://localhost:8080
+    environment:
+      DB_HOST: "db"
+      DB_NAME: "${DB_NAME:-elli}"
+      DB_USER: "${DB_USER:-elli_user}"
+      DB_PASSWORD: "${DB_PASSWORD:-1234}"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

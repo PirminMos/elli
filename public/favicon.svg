@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="elli">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+      <stop offset="0%" stop-color="#1c1c1c"/>
+      <stop offset="70%" stop-color="#080808"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="128" cy="128" r="128" fill="url(#bg)"/>
+
+  <!-- Kursives 'l' als eine fließende Schlaufe -->
+  <path d="M150 172
+           C122 196, 92 182, 96 150
+           C99 120, 116 98, 132 80
+           C151 58, 165 76, 152 100
+           C142 118, 120 128, 118 150
+           C116 168, 130 178, 156 168"
+        fill="none" stroke="#ffffff" stroke-width="15"
+        stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+</svg>
