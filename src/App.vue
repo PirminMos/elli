@@ -7501,6 +7501,10 @@ export default {
         // Modal öffnen
         this.showRaumModal = true;
       } else if (type === 'erstkraft' || type === 'zweitkraft') {
+        // savePerson entscheidet anhand von personModalType, ob save_erstkraft
+        // oder save_zweitkraft aufgerufen wird – hier korrekt setzen, sonst
+        // wird eine neue Zweitkraft faelschlich als Erstkraft gespeichert.
+        this.personModalType = type;
         // Wir nutzen ein gemeinsames Objekt für die neue Person
         this.editingPerson = {
           name: '',
