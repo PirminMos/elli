@@ -1,0 +1,22 @@
+# Shell-Skripte und Git-Hooks MUESSEN LF-Zeilenenden haben, sonst schlagen
+# sie auf Linux mit "bad interpreter: /bin/sh^M" fehl. Unabhaengig von den
+# Windows-Autocrlf-Einstellungen des jeweiligen Clones erzwingen.
+*.sh                 text eol=lf
+.githooks/post-merge text eol=lf
+
+# Sinnvolle Standard-Normalisierung fuer Textdateien
+*.php   text
+*.js    text
+*.vue   text
+*.css   text
+*.html  text
+*.md    text
+*.json  text
+*.yml   text
+*.sql   text
+
+# Binaerdateien nie anfassen
+*.ico   binary
+*.svg   text
+*.docx  binary
+*.png   binary
