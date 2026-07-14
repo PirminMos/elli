@@ -1439,6 +1439,24 @@ if ($action === 'get_schuelerstundenplan') {
         $stmtRaster->execute([$klasseId]);
         $zeitRaster = $stmtRaster->fetchAll(PDO::FETCH_ASSOC);
 
+        // 4b. stunden_id anhand der tatsächlichen Startzeit an das Klassenraster angleichen.
+        //     Termine, die in einem anderen Kontext angelegt wurden (z.B. über den
+        //     Lehrerplan mit abweichender Rasterzählung), tragen eine stunden_id,
+        //     die sich auf ein FREMDES Raster bezieht und daher nicht zu diesem
+        //     klassen_zeitraster passt. Das Grid ordnet Termine aber über stunden_id
+        //     ein – ohne diese Korrektur würden solche Termine unsichtbar bleiben.
+        //     Maßgeblich ist die Uhrzeit aus der Tabelle termin.
+        $startZuIndex = [];
+        foreach ($zeitRaster as $zr) {
+            $startZuIndex[substr((string)$zr['startzeit'], 0, 5)] = (int)$zr['stunden_index'];
+        }
+        foreach ($aufbereiteteTermine as &$__t) {
+            if (isset($startZuIndex[$__t['start']])) {
+                $__t['stunden_id'] = $startZuIndex[$__t['start']];
+            }
+        }
+        unset($__t);
+
         // FINALE AUSGABE (Achte auf $aufbereiteteTermine!)
         echo json_encode([
             "success" => true,
