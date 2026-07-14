@@ -7080,10 +7080,10 @@ export default {
       return this.activeDropdown === id;
     },
     isRaumVerfuegbar(raum_id, tag, start, ende, termin_id = null) {
-      // 1. Den richtigen Raum aus deinem Array finden
-      const raum = this.raumVerfuegbarkeiten.find(r => r.id === raum_id);
-      console.log("troubleshooting isRaumverfuegbar raum", raum);
-      console.log("troubleshooting isRaumverfuegbar parameter", raum_id, tag, start, ende, termin_id);
+      // 1. Den richtigen Raum aus dem Array finden.
+      //    Vergleich per String, da IDs je nach Quelle als Zahl (parseInt beim
+      //    Neuanlegen) oder String (PDO liefert Spalten als String) vorliegen.
+      const raum = this.raumVerfuegbarkeiten.find(r => String(r.id) === String(raum_id));
 
       if (!raum) return false;
 
@@ -7713,6 +7713,7 @@ export default {
         if (result.id) {
           const neueRaumId = parseInt(result.id);
           await this.loadRaeume(); // Liste aktualisieren
+          await this.loadRaumVerfuegbarkeiten(); // Liste für isRaumVerfuegbar aktualisieren (sonst ist der neue Raum dort unbekannt)
           // FALL 1: Wir kommen aus einem Termin (Quick-Add während Aktivitäts-Bearbeitung)
           if (this.activeTerminIndex !== null && this.currentActivity) {
             const termin = this.currentActivity.termine[this.activeTerminIndex];
