@@ -1626,6 +1626,36 @@
         </div>
       </div>
 
+      <div v-if="showOnboardingModal" class="modal-overlay" style="z-index: 9999">
+        <div class="modal-content glass-modal">
+          <div class="modal-header">
+            <h3><span class="icon">🎓</span> Willkommen bei elli</h3>
+          </div>
+          <div class="modal-body">
+            <p style="margin-bottom: 1rem; line-height: 1.5;">
+              Um loszulegen, muss zuerst ein <strong>Schuljahr</strong> angelegt werden.
+              Ohne Schuljahr lassen sich keine Klassen, Lehrkräfte oder Pläne erstellen.
+            </p>
+            <div class="input-floating-group">
+              <label>Schuljahr:</label>
+              <input v-model="onboarding.schuljahr" placeholder="z.B. 25/26" class="glass-input-large"
+                     @keyup.enter="createFirstSchuljahr">
+            </div>
+            <div class="input-floating-group">
+              <label>Name der Schule (optional):</label>
+              <input v-model="onboarding.schulname" placeholder="z.B. Grundschule Musterhausen"
+                     class="glass-input-large" @keyup.enter="createFirstSchuljahr">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="glass-btn-save" :disabled="!onboarding.schuljahr.trim() || onboardingSaving"
+                    @click="createFirstSchuljahr">
+              {{ onboardingSaving ? 'Wird angelegt…' : "Los geht's" }}
+            </button>
+          </div>
+        </div>
+      </div>
+
     </main>
     <transition name="slide-up">
       <div v-if="snackbar.show" class="snackbar" :class="snackbar.type">
@@ -4881,6 +4911,9 @@ export default {
       showNewFachModal: false,
       importResults: [],
       showImportPreview: false,
+      showOnboardingModal: false,
+      onboarding: {schuljahr: '25/26', schulname: ''},
+      onboardingSaving: false,
       dragOverCell: null,
       draggedSubject: null,
       assignments: [],
@@ -5517,6 +5550,34 @@ export default {
       } catch (e) {
         console.error("Fehler beim Anlegen:", e);
         this.showStatus("Fehler: " + e.message, "error");
+      }
+    },
+    async createFirstSchuljahr() {
+      const jahr = (this.onboarding.schuljahr || '').trim();
+      if (!jahr || this.onboardingSaving) return;
+      this.onboardingSaving = true;
+      try {
+        const response = await fetch(`${API_URL}?action=add_schuljahr`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            schuljahr: jahr,
+            adresse: {name: (this.onboarding.schulname || '').trim(), strasse: '', stadt: ''}
+          })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || 'Unbekannter Fehler');
+
+        await this.fetchSchuljahre();        // setzt currentSchuljahrId auf das neue Jahr
+        this.showOnboardingModal = false;
+        if (this.currentSchuljahrId) await this.loadFromDatabase();
+        this.showStatus(`Schuljahr ${jahr} wurde angelegt!`);
+      } catch (e) {
+        console.error('Fehler beim Anlegen des ersten Schuljahrs:', e);
+        this.showStatus('Fehler: ' + e.message, 'error');
+      } finally {
+        this.onboardingSaving = false;
       }
     },
     closeRaumModal() {
@@ -8301,6 +8362,12 @@ export default {
     try {
       // 1. Zuerst die Schuljahre laden und die currentSchuljahrId setzen
       await this.fetchSchuljahre();
+
+      // 1b. Erststart: Ohne Schuljahr geht nichts -> Nutzer zwingend anlegen lassen
+      if (!this.schuljahre || this.schuljahre.length === 0) {
+        this.showOnboardingModal = true;
+        return;
+      }
 
       // 2. Erst wenn wir eine ID haben, die restlichen Daten laden
       if (this.currentSchuljahrId) {
