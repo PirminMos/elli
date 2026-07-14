@@ -1038,9 +1038,9 @@ if ($action === 'save_zweitkraft') {
                 ermaessigung = ?, grund_ermaessigung = ?, upz = ?
                 WHERE id = ?");
             $stmt->execute([
-                $data['name'], $data['kuerzel'], $data['typ'],
-                $data['farbe'], $data['textfarbe'],
-                $data['ermaessigung'], $data['grund_ermaessigung'], $data['upz'], $data['id']
+                $data['name'], $data['kuerzel'] ?? '', $data['typ'] ?? 'Lehrkraft',
+                $data['farbe'] ?? null, $data['textfarbe'] ?? '#ffffff',
+                $data['ermaessigung'] ?? 0, $data['grund_ermaessigung'] ?? null, $data['upz'] ?? 0, $data['id']
             ]);
             $id = $data['id'];
         } else {
@@ -1049,9 +1049,9 @@ if ($action === 'save_zweitkraft') {
                 (schuljahr_id, name, kuerzel, typ, farbe, textfarbe, ermaessigung, grund_ermaessigung, upz)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
-                $data['schuljahr_id'], $data['name'], $data['kuerzel'], $data['typ'],
-                $data['farbe'], $data['textfarbe'] ?? '#ffffff',
-                $data['ermaessigung'], $data['grund_ermaessigung'], $data['upz']
+                $data['schuljahr_id'], $data['name'], $data['kuerzel'] ?? '', $data['typ'] ?? 'Lehrkraft',
+                $data['farbe'] ?? null, $data['textfarbe'] ?? '#ffffff',
+                $data['ermaessigung'] ?? 0, $data['grund_ermaessigung'] ?? null, $data['upz'] ?? 0
             ]);
             $id = $conn->lastInsertId();
         }
