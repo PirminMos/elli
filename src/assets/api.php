@@ -216,6 +216,112 @@ if ($action === 'add_schuljahr') {
     exit;
 }
 
+// Kopiert die BASISDATEN eines Schuljahres in ein anderes (leeres) Schuljahr.
+// Bewusst NICHT kopiert: Soll-Stunden/Stundentafeln (stundentafel,
+// lehrer_stundentafel, zweitkraft_stundentafel) und konkrete Termine.
+// Raum-Verfuegbarkeiten und Klassen-Zeitraster gehoeren zu Raum/Klasse und
+// werden mitkopiert; Raum-IDs in schulfach.benoetigte_raeume werden umgebogen.
+if ($action === 'copy_schuljahr_data') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $src = isset($data['source_schuljahr_id']) ? (int)$data['source_schuljahr_id'] : 0;
+    $dst = isset($data['target_schuljahr_id']) ? (int)$data['target_schuljahr_id'] : 0;
+    if (!$src || !$dst || $src === $dst) {
+        echo json_encode(['success' => false, 'error' => 'Ungueltige Schuljahr-IDs']);
+        exit;
+    }
+    try {
+        $conn->beginTransaction();
+
+        // 0. Adresse des Vorjahres uebernehmen
+        $stmt = $conn->prepare("SELECT adresse FROM schule WHERE id = ?");
+        $stmt->execute([$src]);
+        $adresse = $stmt->fetchColumn();
+        $conn->prepare("UPDATE schule SET adresse = ? WHERE id = ?")->execute([$adresse, $dst]);
+
+        // 1. Erstkraefte (kein Remap noetig)
+        $conn->prepare("
+            INSERT INTO erstkraft (schuljahr_id, name, titel, kuerzel, farbe, pflichtstunden, ermaessigung, upz, faecher, textfarbe, ermaessigung_grund)
+            SELECT ?, name, titel, kuerzel, farbe, pflichtstunden, ermaessigung, upz, faecher, textfarbe, ermaessigung_grund
+            FROM erstkraft WHERE schuljahr_id = ?
+        ")->execute([$dst, $src]);
+
+        // 2. Zweitkraefte
+        $conn->prepare("
+            INSERT INTO zweitkraft (schuljahr_id, typ, name, kuerzel, farbe, textfarbe, ermaessigung, grund_ermaessigung, upz)
+            SELECT ?, typ, name, kuerzel, farbe, textfarbe, ermaessigung, grund_ermaessigung, upz
+            FROM zweitkraft WHERE schuljahr_id = ?
+        ")->execute([$dst, $src]);
+
+        // 3. Aktivitaeten
+        $conn->prepare("
+            INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort)
+            SELECT ?, typ, name, einsatzort FROM aktivitaet WHERE schuljahr_id = ?
+        ")->execute([$dst, $src]);
+
+        // 4. Klassen (mit Map fuer Zeitraster)
+        $klassenMap = [];
+        $stmtK = $conn->prepare("SELECT id, name FROM klassen WHERE schuljahr_id = ?");
+        $stmtK->execute([$src]);
+        $insK = $conn->prepare("INSERT INTO klassen (name, schuljahr_id) VALUES (?, ?)");
+        foreach ($stmtK->fetchAll(PDO::FETCH_ASSOC) as $k) {
+            $insK->execute([$k['name'], $dst]);
+            $klassenMap[$k['id']] = $conn->lastInsertId();
+        }
+        // 4b. Klassen-Zeitraster remappen
+        $stmtZ = $conn->prepare("SELECT stunden_index, startzeit, endzeit FROM klassen_zeitraster WHERE klasse_id = ?");
+        $insZ = $conn->prepare("INSERT INTO klassen_zeitraster (klasse_id, stunden_index, startzeit, endzeit) VALUES (?, ?, ?, ?)");
+        foreach ($klassenMap as $oldK => $newK) {
+            $stmtZ->execute([$oldK]);
+            foreach ($stmtZ->fetchAll(PDO::FETCH_ASSOC) as $z) {
+                $insZ->execute([$newK, $z['stunden_index'], $z['startzeit'], $z['endzeit']]);
+            }
+        }
+
+        // 5. Raeume (mit Map fuer Verfuegbarkeit + benoetigte_raeume)
+        $raumMap = [];
+        $stmtR = $conn->prepare("SELECT id, name, unterrichtsfach, immer_verfuegbar FROM raum WHERE schuljahr_id = ?");
+        $stmtR->execute([$src]);
+        $insR = $conn->prepare("INSERT INTO raum (schuljahr_id, name, unterrichtsfach, immer_verfuegbar) VALUES (?, ?, ?, ?)");
+        foreach ($stmtR->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $insR->execute([$dst, $r['name'], $r['unterrichtsfach'], $r['immer_verfuegbar']]);
+            $raumMap[$r['id']] = $conn->lastInsertId();
+        }
+        // 5b. Raum-Verfuegbarkeiten remappen
+        $stmtRV = $conn->prepare("SELECT tag, startzeit, endzeit FROM raum_verfuegbarkeit WHERE raum_id = ?");
+        $insRV = $conn->prepare("INSERT INTO raum_verfuegbarkeit (raum_id, tag, startzeit, endzeit) VALUES (?, ?, ?, ?)");
+        foreach ($raumMap as $oldR => $newR) {
+            $stmtRV->execute([$oldR]);
+            foreach ($stmtRV->fetchAll(PDO::FETCH_ASSOC) as $v) {
+                $insRV->execute([$newR, $v['tag'], $v['startzeit'], $v['endzeit']]);
+            }
+        }
+
+        // 6. Schulfaecher (Raum-IDs in benoetigte_raeume auf neue Raeume umbiegen)
+        $stmtF = $conn->prepare("SELECT name, benoetigte_raeume, farbe FROM schulfach WHERE schuljahr_id = ?");
+        $stmtF->execute([$src]);
+        $insF = $conn->prepare("INSERT INTO schulfach (schuljahr_id, name, benoetigte_raeume, farbe) VALUES (?, ?, ?, ?)");
+        foreach ($stmtF->fetchAll(PDO::FETCH_ASSOC) as $f) {
+            $br = $f['benoetigte_raeume'];
+            $ids = json_decode((string)$br, true);
+            if (is_array($ids)) {
+                $neu = [];
+                foreach ($ids as $rid) {
+                    $neu[] = isset($raumMap[$rid]) ? (int)$raumMap[$rid] : $rid;
+                }
+                $br = json_encode($neu);
+            }
+            $insF->execute([$dst, $f['name'], $br, $f['farbe']]);
+        }
+
+        $conn->commit();
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 // --- EINSTELLUNGEN LADEN ---
 if ($action === 'get_settings') {
     try {

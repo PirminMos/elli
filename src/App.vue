@@ -5506,13 +5506,17 @@ export default {
       });
     },
     async addYear() {
-      // 1. Das höchste Jahr in der Liste finden
+      // 1. Das höchste Jahr in der Liste finden (dient auch als Kopier-Quelle)
       let nextYearStr = "25/26"; // Standard, falls die Liste leer ist
+      let quelleId = null;       // Vorjahr, aus dem kopiert werden kann
+      let quelleName = '';
 
       if (this.schuljahre && this.schuljahre.length > 0) {
         // Wir sortieren die Jahre absteigend, um das aktuellste zu finden
         const sorted = [...this.schuljahre].sort((a, b) => b.schuljahr.localeCompare(a.schuljahr));
         const lastYear = sorted[0].schuljahr; // z.B. "24/25"
+        quelleId = sorted[0].id;
+        quelleName = lastYear;
 
         // Zerlegen ("24/25" -> ["24", "25"]) und hochrechnen
         const parts = lastYear.split('/');
@@ -5544,8 +5548,24 @@ export default {
 
         const result = await response.json();
         if (result.success) {
-          this.showStatus(`Schuljahr ${nextYearStr} wurde erfolgreich erstellt!`);
-          await this.fetchSchuljahre(); // Liste sofort aktualisieren
+          const neuId = result.id;
+
+          // 4. Optional: alle Basisdaten aus dem Vorjahr übernehmen
+          if (quelleId && confirm(`Sollen alle Basisdaten (Erst-/Zweitkräfte, Klassen, Räume, Schulfächer, Aktivitäten und Adresse) aus dem Vorjahr ${quelleName} in das neue Schuljahr ${nextYearStr} übernommen werden?`)) {
+            const copyRes = await fetch(`${API_URL}?action=copy_schuljahr_data`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({source_schuljahr_id: quelleId, target_schuljahr_id: neuId})
+            });
+            const copyJson = await copyRes.json();
+            if (!copyJson.success) throw new Error(copyJson.error || 'Kopieren fehlgeschlagen');
+            this.showStatus(`Schuljahr ${nextYearStr} angelegt und Basisdaten aus ${quelleName} übernommen!`);
+          } else {
+            this.showStatus(`Schuljahr ${nextYearStr} wurde erfolgreich erstellt!`);
+          }
+
+          await this.fetchSchuljahre();            // Liste sofort aktualisieren
+          if (neuId) this.currentSchuljahrId = Number(neuId); // ins neue Jahr wechseln (Watcher lädt neu)
         }
       } catch (e) {
         console.error("Fehler beim Anlegen:", e);
