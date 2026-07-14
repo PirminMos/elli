@@ -1,0 +1,20 @@
+#!/bin/sh
+# Wird nach jedem erfolgreichen 'git pull' (Merge/Fast-Forward) ausgefuehrt und
+# baut/startet den Docker-Stack automatisch neu.
+#
+# Aktivierung (einmalig pro Clone):
+#   git config core.hooksPath .githooks
+#
+# Deaktivieren:
+#   git config --unset core.hooksPath
+
+# In das Repo-Wurzelverzeichnis wechseln (dort liegt docker-compose.yml)
+cd "$(git rev-parse --show-toplevel)" || exit 0
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[elli] Docker nicht gefunden - ueberspringe automatisches Compose."
+  exit 0
+fi
+
+echo "[elli] git pull erkannt -> docker compose up -d --build"
+docker compose up -d --build

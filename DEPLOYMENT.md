@@ -41,6 +41,22 @@ PHP-Bibliotheken – das dauert ein paar Minuten. Danach geht es sofort.
 
 ---
 
+## Automatisch neu bauen nach `git pull`
+
+Ein mitgelieferter Git-Hook (`.githooks/post-merge`) baut den Stack nach
+jedem `git pull` automatisch neu. Einmalig pro Clone aktivieren:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Danach genügt `git pull` – der Hook führt anschließend selbst
+`docker compose up -d --build` aus. Der Hook feuert bei `git pull` (Merge
+und Fast-Forward), nicht bei reinem `git fetch` oder `git pull --rebase`.
+Abschalten: `git config --unset core.hooksPath`.
+
+---
+
 ## Für andere über GitHub bereitstellen
 
 **Variante A – bauen beim Nutzer (einfachste):**
