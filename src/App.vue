@@ -1258,9 +1258,19 @@
 
                   <div v-for="(v, vIndex) in editingRaum.verfuegbarkeiten" :key="vIndex"
                        class="availability-row-card glass">
-                    <select v-model="v.tag" class="minimal-select">
-                      <option v-for="d in days" :key="d" :value="d">{{ d }}</option>
-                    </select>
+                    <div class="custom-select-wrapper tag-select">
+                      <div class="custom-select-trigger" @click.stop="toggleDropdown('raum-modal-tag-' + vIndex)">
+                        <span>{{ v.tag || 'Tag wählen...' }}</span>
+                        <span class="arrow-down" :class="{ 'rotate': isDropdownOpen('raum-modal-tag-' + vIndex) }">▼</span>
+                      </div>
+                      <transition name="fade">
+                        <div v-if="isDropdownOpen('raum-modal-tag-' + vIndex)" class="custom-options glass">
+                          <div v-for="d in days" :key="d" class="custom-option" @click="v.tag = d; activeDropdown = null">
+                            {{ d }}
+                          </div>
+                        </div>
+                      </transition>
+                    </div>
                     <div class="time-inputs">
                       <input type="time" v-model="v.startzeit">
                       <span>bis</span>
@@ -2069,6 +2079,23 @@
           <button class="glass-btn-save" :disabled="!editingAktivitaet.name" @click="saveActivity">
             Aktivität speichern
           </button>
+        </div>
+      </div>
+    </div>
+  </transition>
+
+  <transition name="fade">
+    <div v-if="dialog.show" class="elli-dialog-overlay"
+         @click.self="_dialogClose(dialog.mode === 'confirm' ? false : true)">
+      <div class="elli-dialog" role="dialog" aria-modal="true">
+        <div v-if="dialog.title" class="elli-dialog-title">{{ dialog.title }}</div>
+        <div class="elli-dialog-message">{{ dialog.message }}</div>
+        <div class="elli-dialog-actions">
+          <button v-if="dialog.mode === 'confirm'" class="elli-dialog-btn secondary"
+                  @click="_dialogClose(false)">{{ dialog.cancelText }}</button>
+          <button ref="dialogOk" class="elli-dialog-btn primary"
+                  @click="_dialogClose(true)"
+                  @keydown.esc="_dialogClose(dialog.mode === 'confirm' ? false : true)">{{ dialog.okText }}</button>
         </div>
       </div>
     </div>
@@ -4656,6 +4683,82 @@ input:checked + .slider:before {
 .arrow-up.rotate {
   transform: rotate(180deg);
 }
+
+/* --- elli-Dialog (Ersatz fuer native confirm()/alert()) --- */
+.elli-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.elli-dialog {
+  background: #1f1f1f;
+  color: #ffffff;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  width: 100%;
+  max-width: 420px;
+  padding: 24px 26px;
+}
+
+.elli-dialog-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #ffffff;
+}
+
+.elli-dialog-message {
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: #e6e6e6;
+  white-space: pre-wrap;
+}
+
+.elli-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.elli-dialog-btn {
+  padding: 9px 20px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: background 0.15s, transform 0.05s;
+}
+
+.elli-dialog-btn.primary {
+  background: #4f8cff;
+  color: #ffffff;
+}
+
+.elli-dialog-btn.primary:hover {
+  background: #3f78e0;
+}
+
+.elli-dialog-btn.secondary {
+  background: #3a3a3a;
+  color: #e0e0e0;
+}
+
+.elli-dialog-btn.secondary:hover {
+  background: #474747;
+}
+
+.elli-dialog-btn:active {
+  transform: translateY(1px);
+}
 </style>
 <script setup>
 import {ref} from 'vue';
@@ -4914,6 +5017,8 @@ export default {
       showOnboardingModal: false,
       onboarding: {schuljahr: '25/26', schulname: ''},
       onboardingSaving: false,
+      // Eigener elli-Dialog statt nativer confirm()/alert()-Fenster
+      dialog: {show: false, mode: 'alert', title: '', message: '', okText: 'OK', cancelText: 'Abbrechen', _resolve: null},
       dragOverCell: null,
       draggedSubject: null,
       assignments: [],
@@ -5527,7 +5632,7 @@ export default {
       }
 
       // 2. Bestätigung (optional, aber sicher ist sicher)
-      if (!confirm(`Soll das Schuljahr ${nextYearStr} automatisch angelegt werden?`)) return;
+      if (!await this.elliConfirm(`Soll das Schuljahr ${nextYearStr} automatisch angelegt werden?`, 'Neues Schuljahr')) return;
 
       // 3. Senden an die API
       try {
@@ -5551,7 +5656,7 @@ export default {
           const neuId = result.id;
 
           // 4. Optional: alle Basisdaten aus dem Vorjahr übernehmen
-          if (quelleId && confirm(`Sollen alle Basisdaten (Erst-/Zweitkräfte, Klassen, Räume, Schulfächer, Aktivitäten und Adresse) aus dem Vorjahr ${quelleName} in das neue Schuljahr ${nextYearStr} übernommen werden?`)) {
+          if (quelleId && await this.elliConfirm(`Sollen alle Basisdaten (Erst-/Zweitkräfte, Klassen, Räume, Schulfächer, Aktivitäten und Adresse) aus dem Vorjahr ${quelleName} in das neue Schuljahr ${nextYearStr} übernommen werden?`, 'Daten übernehmen')) {
             const copyRes = await fetch(`${API_URL}?action=copy_schuljahr_data`, {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
@@ -5571,6 +5676,24 @@ export default {
         console.error("Fehler beim Anlegen:", e);
         this.showStatus("Fehler: " + e.message, "error");
       }
+    },
+    elliConfirm(message, title = 'Bestätigen') {
+      return new Promise((resolve) => {
+        this.dialog = {show: true, mode: 'confirm', title, message, okText: 'OK', cancelText: 'Abbrechen', _resolve: resolve};
+        this.$nextTick(() => { const el = this.$refs.dialogOk; if (el && el.focus) el.focus(); });
+      });
+    },
+    elliAlert(message, title = 'Hinweis') {
+      return new Promise((resolve) => {
+        this.dialog = {show: true, mode: 'alert', title, message, okText: 'OK', cancelText: 'Abbrechen', _resolve: resolve};
+        this.$nextTick(() => { const el = this.$refs.dialogOk; if (el && el.focus) el.focus(); });
+      });
+    },
+    _dialogClose(result) {
+      const r = this.dialog._resolve;
+      this.dialog.show = false;
+      this.dialog._resolve = null;
+      if (r) r(result);
     },
     async createFirstSchuljahr() {
       const jahr = (this.onboarding.schuljahr || '').trim();
@@ -5628,7 +5751,7 @@ export default {
         });
         const result = await response.json();
         if (result.success) {
-          alert("Daten erfolgreich übernommen.");
+          this.elliAlert("Daten erfolgreich übernommen.");
           this.showImportPreview = false;
           this.loadFromDatabase();
         }
@@ -5637,7 +5760,7 @@ export default {
       }
     },
     async deleteElement(item) {
-      if (!confirm(`Möchten Sie "${item.name}" wirklich löschen?`)) return;
+      if (!await this.elliConfirm(`Möchten Sie "${item.name}" wirklich löschen?`, 'Löschen bestätigen')) return;
 
       try {
         // Wir hängen den Typ aus activeCategory an
@@ -5663,7 +5786,7 @@ export default {
             this.loadFromDatabase();
           }
         } else {
-          alert("Fehler: " + result.error);
+          this.elliAlert("Fehler: " + result.error);
         }
       } catch (e) {
         console.error(e);
@@ -5868,11 +5991,11 @@ export default {
           }];
           this.showImportPreview = true;
         } else {
-          alert("Fehler beim Import: " + result.error);
+          this.elliAlert("Fehler beim Import: " + result.error);
         }
       } catch (e) {
         console.error(e);
-        alert("Upload fehlgeschlagen.");
+        this.elliAlert("Upload fehlgeschlagen.");
       } finally {
         // Input zurücksetzen, damit dieselbe Datei nochmal gewählt werden kann
         event.target.value = '';
@@ -7641,7 +7764,7 @@ export default {
       } catch (e) {
         // Hier fangen wir den Fehler ab, damit die App nicht abstürzt
         console.error("Fehler beim Speichern des Fachs:", e);
-        alert("Das Fach konnte nicht gespeichert werden. Details siehe Konsole.");
+        this.elliAlert("Das Fach konnte nicht gespeichert werden. Details siehe Konsole.");
       }
     },
     async savePerson() {
@@ -7723,7 +7846,7 @@ export default {
         }
       } catch (error) {
         console.error("Fehler beim Speichern der Person:", error);
-        alert("Speichern fehlgeschlagen.");
+        this.elliAlert("Speichern fehlgeschlagen.");
       }
     },
     async saveRaum() {
@@ -8059,7 +8182,7 @@ export default {
     },
     async saveAddressManual() {
       if (!this.currentSchuljahrId) {
-        alert("Bitte wählen Sie zuerst ein Schuljahr aus.");
+        this.elliAlert("Bitte wählen Sie zuerst ein Schuljahr aus.");
         return;
       }
 
