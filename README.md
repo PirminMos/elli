@@ -54,6 +54,10 @@ docker compose up -d --build
 Danach im Browser: **http://localhost:8080** – beim ersten Start führt ein
 Assistent durch das Anlegen des ersten Schuljahres.
 
+**Komplett neu und noch nie mit Docker/GitHub gearbeitet?** Die
+Schritt-für-Schritt-Anleitung für Einsteiger unter Windows steht in
+[ANLEITUNG-WINDOWS.md](ANLEITUNG-WINDOWS.md).
+
 Ausführliche Anleitung (Bereitstellung, Backups, Datenumzug) siehe
 [DEPLOYMENT.md](DEPLOYMENT.md).
 
