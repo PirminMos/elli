@@ -166,29 +166,6 @@
           </div>
 
           <div class="input-group">
-            <label>Typ:</label>
-            <div class="custom-select-wrapper">
-              <div class="custom-select-trigger" @click.stop="toggleDropdown('type')">
-                <span>{{ currentActivity.typ || 'Typ wählen...' }}</span>
-                <span class="arrow-down" :class="{ 'rotate': isDropdownOpen('type') }">▼</span>
-              </div>
-
-              <transition name="fade">
-                <div v-if="isDropdownOpen('type')" class="custom-options glass">
-                  <div
-                      v-for="t in ['AG','MSD/MSH','SVE','Mobile Reserve','Elternsprechstunde','Referendarsbetreuung','Förderunterricht','Systembetreuung','IB']"
-                      :key="t"
-                      class="custom-option"
-                      @click="selectType(t)"
-                  >
-                    {{ t }}
-                  </div>
-                </div>
-              </transition>
-            </div>
-          </div>
-
-          <div class="input-group">
             <label>Einsatzort:</label>
             <div class="custom-select-wrapper">
               <div class="custom-select-trigger" @click.stop="toggleDropdown('aktivitaet-einsatzort')">
@@ -373,7 +350,7 @@
 
           <div class="input-row-triple">
             <div class="input-group">
-              <label>Pflichtstunden</label>
+              <label>Regelstundenmaß</label>
               <div class="custom-number-input">
                 <button @click="currentErstkraft.pflichtstunden--">-</button>
                 <input v-model.number="currentErstkraft.pflichtstunden" type="number">
@@ -484,7 +461,7 @@
               <div class="input-row-triple">
                 <div class="input-row-dual fifty-percent">
                   <div class="input-group">
-                    <label>Pflichtstunden:</label>
+                    <label>Regelstundenmaß:</label>
                     <div class="custom-number-input">
                       <button @click="mass.stunden--">-</button>
                       <input v-model="mass.stunden" type="number" step="1" min="0">
@@ -1978,102 +1955,11 @@
                    @keyup.enter="saveActivity">
           </div>
 
-          <div class="input-group">
-            <label>Typ:</label>
-            <div class="custom-select-wrapper">
-              <div class="custom-select-trigger" @click.stop="toggleDropdown('type')">
-                <span>{{ editingAktivitaet.typ || 'Typ wählen...' }}</span>
-                <span class="arrow-down" :class="{ 'rotate': isDropdownOpen('type') }">▼</span>
-              </div>
-
-
-              <transition name="fade">
-                <div v-if="isDropdownOpen('type')" class="custom-options glass">
-                  <div
-                      v-for="t in ['AG','MSD/MSH','SVE','Mobile Reserve','Elternsprechstunde','Referendarsbetreuung','Förderunterricht','Systembetreuung','IB']"
-                      :key="t"
-                      class="custom-option"
-                      @click="selectType(t)"
-                  >
-                    {{ t }}
-                  </div>
-                </div>
-              </transition>
-            </div>
-          </div>
-
           <div class="input-floating-group">
             <label>Einsatzort:</label>
             <input v-model="editingAktivitaet.einsatzort" placeholder="z.B. HPT" class="glass-input-large">
           </div>
         </div>
-
-        <div class="input-group full-width">
-          <label>Termine (Besetzung, Ort & Zeit):</label>
-
-          <div v-for="(termin, index) in editingAktivitaet.termine" :key="index" class="termin-card glass">
-            <div class="termin-main-row">
-              <div class="custom-select-wrapper tag-select">
-                <div class="custom-select-trigger" @click.stop="toggleDropdown('tag-' + index)">
-                  <span>{{ termin.tag || 'Tag wählen...' }}</span>
-                  <span class="arrow-down" :class="{ 'rotate': isDropdownOpen('tag-' + index) }">▼</span>
-                </div>
-                <transition name="fade">
-                  <div v-if="isDropdownOpen('tag-' + index)" class="custom-options glass">
-                    <div v-for="d in days" :key="d" class="custom-option" @click="selectTagForTermin(index, d)">
-                      {{ d }}
-                    </div>
-                  </div>
-                </transition>
-              </div>
-
-              <div class="time-col-wrapper">
-                <input v-model="termin.uhrzeit" type="time" class="glass-input time-input">
-                <input v-model="termin.endzeit" type="time" class="glass-input time-input">
-              </div>
-
-              <button class="remove-btn" @click="editingAktivitaet.termine.splice(index, 1)">×</button>
-            </div>
-
-            <div class="termin-row mt-10">
-              <div class="custom-select-wrapper" style="flex: 1;">
-                <div
-                    class="custom-select-trigger"
-                    :class="{ 'rotate': isDropdownOpen('raum-' + index),
-                          'border-error': termin.raum_id && !isRaumVerfuegbar(termin.raum_id, termin.tag, termin.uhrzeit, termin.endzeit)
-                      }"
-                    @click.stop="toggleDropdown('raum-' + index)"
-                >
-                  <span>{{ getRaumNamen(termin) }}</span>
-                  <span class="arrow-down" :class="{ 'rotate': isDropdownOpen('raum-' + index) }">▼</span>
-                </div>
-
-                <div
-                    v-if="termin.raum_id && !isRaumVerfuegbar(termin.raum_id, termin.tag, termin.uhrzeit, termin.endzeit)"
-                    class="error-message-inline"
-                >
-                  ⚠️ Raum zu dieser Zeit belegt/geschlossen
-                </div>
-                <transition name="fade">
-                  <div v-if="isDropdownOpen('raum-' + index)" class="custom-options glass">
-                    <div v-for="r in raeume" :key="r.id"
-                         class="custom-option"
-                         :class="{ selected: termin.raeume.includes(r.id) }"
-                         @click.stop="toggleSelection(termin.raeume, r.id)">
-                      {{ r.name }}
-                      <span v-if="termin.raeume.some(id => id == r.id)">✓</span>
-                    </div>
-                    <div class="custom-option add-option" @click.stop="openQuickAdd('raum', index)">+ Raum
-                      hinzufügen
-                    </div>
-                  </div>
-                </transition>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <button class="glass-btn btn-add-inline" @click="addTermin">+ Termin hinzufügen</button>
 
         <div class="modal-footer">
           <button class="glass-btn-save" :disabled="!editingAktivitaet.name" @click="saveActivity">
@@ -2658,7 +2544,7 @@ textarea {
 
 .editor-grid-aktivitaet {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 30px;
 }
 
@@ -4947,7 +4833,6 @@ export default {
       currentActivity: {
         id: null,
         name: '',
-        typ: '',
         einsatzort: '',
         termine: []
       },
@@ -5076,7 +4961,6 @@ export default {
       },
       editingAktivitaet: {
         name: '',
-        typ: '',
         termine: [
           {
             tag: '',
@@ -5117,14 +5001,9 @@ export default {
       }
     },
     isFormValid() {
-      const nameValid = this.currentActivity.name.trim() !== '';
-      const termineValid = this.currentActivity.termine.length > 0 &&
-          this.currentActivity.termine.every(t =>
-              t.verantwortliche.length > 0 &&
-              t.raeume.length > 0 &&
-              t.uhrzeit < t.endzeit // PRÜFUNG: Start muss vor Ende liegen
-          );
-      return nameValid && termineValid;
+      // Fuer Aktivitaeten ist einzig der Name Pflicht. Konkrete Termine
+      // werden spaeter per Drag & Drop im Wochenplan gesetzt.
+      return this.currentActivity.name.trim() !== '';
     },
     isErstkraftFormValid() {
       return (
@@ -5413,7 +5292,6 @@ export default {
         this.currentActivity = {
           id: null,
           name: '',
-          typ: '',
           einsatzort: '',
           verantwortliche: [], // Wichtig: Als Array initialisieren
           raeume: [],          // Wichtig: Als Array initialisieren
@@ -7662,19 +7540,12 @@ export default {
         };
         this.showNewFachModal = true;
       } else if (type === 'aktivitaet') {
+        // Beim Anlegen werden nur die Stammdaten erfasst. Konkrete Termine
+        // (Tag/Zeit/Raum) werden spaeter per Drag & Drop im Wochenplan gesetzt.
         this.editingAktivitaet = {
           name: '',
-          typ: '',
           einsatzort: '',
-          termine: [
-            {
-              tag: '',
-              uhrzeit: '13:00', // Wichtig: Gleicher Name wie im v-model!
-              endzeit: '13:45',
-              raeume: [],  // Muss als Array existieren wegen .includes()
-              verantwortliche: []
-            }
-          ]
+          termine: []
         };
         this.showNewAktivitaetModal = true;
       }
@@ -7955,17 +7826,10 @@ export default {
       this.activeDropdown = null;
     },
     selectType(t) {
-      // Wenn du im Modus "Zweitkraft" bist:
+      // Wird nur noch vom Zweitkraft-Typ-Dropdown genutzt.
       if (this.activeCategory === 'zweitkraft') {
         this.currentZweitkraft.typ = t;
-      } else if (this.showNewAktivitaetModal) {
-        this.editingAktivitaet.typ = t;
       }
-      // Falls du dasselbe Dropdown auch für Aktivitäten nutzt:
-      else if (this.currentActivity) {
-        this.currentActivity.typ = t;
-      }
-
       this.activeDropdown = null;
     },
     selectFachForTafel(obj, typePrefix) {
