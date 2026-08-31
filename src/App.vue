@@ -1648,35 +1648,6 @@
         </div>
       </transition>
 
-      <div v-if="showImportPreview" class="modal-overlay">
-        <div class="modal-content glass import-preview-modal">
-          <h2>Dokumenten-Vorschau</h2>
-          <p>Der extrahierte Text aus der Datei:</p>
-
-          <div class="import-list">
-            <div v-for="(res, index) in importResults" :key="index" class="import-item">
-              <div class="file-header">
-                <strong>Datei: {{ res.file }}</strong>
-              </div>
-
-              <div v-if="res.error" class="error-msg">{{ res.error }}</div>
-
-              <div v-else class="raw-text-container">
-          <textarea
-              readonly
-              class="glass-input raw-text-display"
-              v-model="res.rawText"
-          ></textarea>
-              </div>
-            </div>
-          </div>
-
-          <div class="modal-buttons">
-            <button class="glass-btn secondary" @click="showImportPreview = false">Schließen</button>
-            <button class="glass-btn primary" @click="confirmImport">Weiter zum Parsen</button>
-          </div>
-        </div>
-      </div>
 
       <div v-if="showOnboardingModal" class="modal-overlay" style="z-index: 9999">
         <div class="modal-content glass-modal">
@@ -4832,6 +4803,7 @@ import iconGesamtplan from '@/assets/icons/gesamtplan.svg'
 import iconLehrerstundenplan from '@/assets/icons/lehrerstundenplan.svg'
 import iconRaumbelegungsplan from '@/assets/icons/raumbelegungsplan.svg'
 import iconSchuelerstundenplan from '@/assets/icons/schuelerstundenplan.svg'
+import iconStundentafel from '@/assets/icons/stundentafel.svg'
 
 const getInitialColor = () => {
   const h = Math.floor(Math.random() * 360);
@@ -4915,7 +4887,7 @@ export default {
         },
         'stundentafel': {
           plural: 'Stundentafel',
-          icon: iconSchulfach
+          icon: iconStundentafel
         }
       },
       stundentafelTemplates: [],
@@ -4988,8 +4960,6 @@ export default {
       showFachModal: false,
       editingFach: {name: '', farbe: getInitialColor(), benoetigte_raeume: []},
       showNewFachModal: false,
-      importResults: [],
-      showImportPreview: false,
       showOnboardingModal: false,
       onboarding: {schuljahr: '25/26', schulname: ''},
       onboardingSaving: false,
@@ -5714,26 +5684,6 @@ export default {
       // Ich empfehle max. 100 für die Breite des Balkens:
       return Math.min(percent, 100);
     },
-    async confirmImport() {
-      try {
-        const response = await fetch(`${API_URL}?action=save_imported_data`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            schuljahr_id: this.currentSchuljahrId,
-            data: this.importResults.filter(r => !r.error)
-          })
-        });
-        const result = await response.json();
-        if (result.success) {
-          this.elliAlert("Daten erfolgreich übernommen.");
-          this.showImportPreview = false;
-          this.loadFromDatabase();
-        }
-      } catch (e) {
-        console.error("Speicherfehler", e);
-      }
-    },
     async deleteElement(item) {
       if (!await this.elliConfirm(`Möchten Sie "${item.name}" wirklich löschen?`, 'Löschen bestätigen')) return;
 
@@ -5967,39 +5917,6 @@ export default {
       }).join(', ');
     },
     // In deinen methods:
-    async handleFileUpload(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      const formData = new FormData();
-      formData.append('document', file);
-
-      try {
-        const response = await fetch(`${API_URL}?action=import_document`, {
-          method: 'POST',
-          body: formData
-        });
-        const result = await response.json();
-
-        if (result.success) {
-          // Wir speichern das Ergebnis in einem neuen Array für die Vorschau
-          this.importResults = [{
-            file: result.file,
-            rawText: result.text,
-            error: null
-          }];
-          this.showImportPreview = true;
-        } else {
-          this.elliAlert("Fehler beim Import: " + result.error);
-        }
-      } catch (e) {
-        console.error(e);
-        this.elliAlert("Upload fehlgeschlagen.");
-      } finally {
-        // Input zurücksetzen, damit dieselbe Datei nochmal gewählt werden kann
-        event.target.value = '';
-      }
-    },
     h2rgb(n, h, s, l) {
       const k = (n + h / 30) % 12;
       const a = s * Math.min(l, 100 - l) / 100;
