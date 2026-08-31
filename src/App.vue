@@ -96,18 +96,10 @@
             <span class="btn-text">{{ categoryMap[key].plural }}</span>
           </button>
 
-          <button class="glass-btn btn-rainbow" @click="$refs.fileInput.click()">
-            <span>Dokument(e) importieren</span>
+          <button class="glass-btn btn-accent bottom" @click="navigate('stundentafel')">
+            <img :src="categoryMap['stundentafel'].icon" class="custom-icon-svg" alt="Icon">
+            <span class="btn-text">{{ categoryMap['stundentafel'].plural }}</span>
           </button>
-
-          <input
-              type="file"
-              ref="fileInput"
-              style="display: none"
-              multiple
-              accept=".doc,.docx,.pdf,.xlsx"
-              @change="handleFileUpload"
-          />
         </div>
       </div>
 
@@ -150,6 +142,73 @@
               v-if="activeCategory !== 'raumbelegungsplan' && activeCategory !== 'lehrerstundenplan' && activeCategory !== 'diensteinsatzplan'"
               class="glass-btn btn-add" @click="addNewElement">
             <span>+ Neues Element hinzufügen</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="view === 'editor' && activeCategory === 'stundentafel'" class="editor-container glass">
+        <div class="hero-section small">
+          <h1 class="main-title">{{ currentTemplate.id ? 'Stundentafel bearbeiten' : 'Neue Stundentafel' }}</h1>
+        </div>
+
+        <div class="input-group">
+          <label>Name der Vorlage:</label>
+          <input v-model="currentTemplate.name" type="text" placeholder="z.B. Klasse 1 Standard"
+                 class="glass-input-large" @keyup.enter="saveTemplate">
+        </div>
+
+        <div class="input-group full-width">
+          <label>Fächer &amp; Sollstunden (Einheiten)</label>
+
+          <div v-for="(e, index) in currentTemplate.eintraege" :key="e.fach_id" class="mass-row-item glass-input">
+            <div class="input-row-triple">
+              <div class="input-group" style="flex: 1; justify-content: center;">
+                <span class="fach-title">{{ e.fach_name }}</span>
+              </div>
+              <div class="input-group">
+                <label>Verbund</label>
+                <div class="custom-number-input">
+                  <button @click="e.soll_klassenverbund = Math.max(0, (Number(e.soll_klassenverbund)||0) - 1)">-</button>
+                  <input v-model.number="e.soll_klassenverbund" type="number" step="1" min="0">
+                  <button @click="e.soll_klassenverbund = (Number(e.soll_klassenverbund)||0) + 1">+</button>
+                </div>
+              </div>
+              <div class="input-group">
+                <label>Differenzierung</label>
+                <div class="custom-number-input">
+                  <button @click="e.soll_differenzierung = Math.max(0, (Number(e.soll_differenzierung)||0) - 1)">-</button>
+                  <input v-model.number="e.soll_differenzierung" type="number" step="1" min="0">
+                  <button @click="e.soll_differenzierung = (Number(e.soll_differenzierung)||0) + 1">+</button>
+                </div>
+              </div>
+              <div>
+                <label class="invisible">.</label>
+                <button class="remove-btn" @click="removeTemplateEintrag(index)">×</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="custom-select-wrapper" style="margin-top: 12px;">
+            <div class="custom-select-trigger" @click.stop="toggleDropdown('template-fach')">
+              <span>+ Fach hinzufügen</span>
+              <span class="arrow-down" :class="{ 'rotate': isDropdownOpen('template-fach') }">▼</span>
+            </div>
+            <transition name="fade">
+              <div v-if="isDropdownOpen('template-fach')" class="custom-options glass">
+                <div v-if="!faecher || faecher.length === 0" class="custom-option" style="opacity:.6;cursor:default;">
+                  Keine Schulfächer angelegt
+                </div>
+                <div v-for="f in faecher" :key="f.id" class="custom-option" @click="addFachToTemplate(f)">
+                  {{ f.name }}
+                </div>
+              </div>
+            </transition>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="glass-btn-save" :disabled="!currentTemplate.name" @click="saveTemplate">
+            Stundentafel speichern
           </button>
         </div>
       </div>
@@ -760,7 +819,10 @@
 
         <aside class="timetable-sidebar glass">
           <div class="sidebar-header">
-            <h3>Stundentafel</h3>
+            <div class="tafel-title-row">
+              <h3>Stundentafel</h3>
+              <button class="template-btn-inline" @click="openTemplateModal" title="Vorlage anwenden">Template</button>
+            </div>
             <br>
             <div class="tafel-meta">
               <span>Fach</span>
@@ -983,7 +1045,10 @@
 
         <aside class="timetable-sidebar glass">
           <div class="sidebar-header">
-            <h3>Stundentafel in h</h3>
+            <div class="tafel-title-row">
+              <h3>Stundentafel in h</h3>
+              <button class="template-btn-inline" @click="openTemplateModal" title="Vorlage anwenden">Template</button>
+            </div>
             <br>
             <div class="tafel-meta">
               <span>Fach</span>
@@ -1965,6 +2030,29 @@
           <button class="glass-btn-save" :disabled="!editingAktivitaet.name" @click="saveActivity">
             Aktivität speichern
           </button>
+        </div>
+      </div>
+    </div>
+  </transition>
+
+  <transition name="fade">
+    <div v-if="showTemplateModal" class="modal-overlay" @click.self="showTemplateModal = false">
+      <div class="modal-content glass-modal" role="dialog" aria-modal="true" style="max-width: 460px;">
+        <div class="modal-header">
+          <h3>Stundentafel-Vorlage anwenden</h3>
+          <button class="close-btn-circle" @click="showTemplateModal = false">×</button>
+        </div>
+        <div class="modal-body">
+          <p v-if="!stundentafelTemplates.length" style="opacity: .7; line-height: 1.5;">
+            Es sind noch keine Vorlagen vorhanden. Lege eine über den Button „Stundentafel" auf der Startseite an.
+          </p>
+          <div v-else class="template-pick-list">
+            <button v-for="t in stundentafelTemplates" :key="t.id" class="template-pick-item glass-input"
+                    @click="chooseTemplate(t.id)">
+              <span class="template-pick-name">{{ t.name }}</span>
+              <span class="template-pick-count">{{ t.eintrag_anzahl }} Fächer</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -4589,6 +4677,58 @@ input:checked + .slider:before {
   line-height: 1.55;
   white-space: pre-wrap; /* Zeilenumbrueche der Ueberbuchungs-Liste erhalten */
 }
+
+/* --- Stundentafel-Template: unauffaelliger Button + Auswahl-Modal --- */
+.tafel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.template-btn-inline {
+  background: rgba(255, 255, 255, 0.10);
+  color: #f0f0f0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.template-btn-inline:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.template-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.template-pick-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.template-pick-name {
+  font-weight: 500;
+}
+
+.template-pick-count {
+  opacity: 0.6;
+  font-size: 0.85rem;
+}
 </style>
 <script setup>
 import {ref} from 'vue';
@@ -4772,8 +4912,15 @@ export default {
         'schuelerstundenplan': {
           plural: 'Schülerstundenpläne',
           icon: iconSchuelerstundenplan
+        },
+        'stundentafel': {
+          plural: 'Stundentafel',
+          icon: iconSchulfach
         }
       },
+      stundentafelTemplates: [],
+      currentTemplate: {id: null, name: '', eintraege: []},
+      showTemplateModal: false,
       currentActivity: {
         id: null,
         name: '',
@@ -4982,6 +5129,7 @@ export default {
       if (this.activeCategory === 'raumbelegungsplan') return this.raumVerfuegbarkeiten;
       if (this.activeCategory === 'lehrerstundenplan') return this.erstkraefte;
       if (this.activeCategory === 'diensteinsatzplan') return this.zweitkraefte;
+      if (this.activeCategory === 'stundentafel') return this.stundentafelTemplates;
       return [];
     },
     calculatedUPZZweitkraft() {
@@ -5232,6 +5380,11 @@ export default {
   },
   methods: {
     async addNewElement() {
+      if (this.activeCategory === 'stundentafel') {
+        this.currentTemplate = {id: null, name: '', eintraege: []};
+        this.view = 'editor';
+        return;
+      }
       if (this.activeCategory === 'aktivitaet') {
         this.currentActivity = {
           id: null,
@@ -5604,6 +5757,8 @@ export default {
           // Daten neu laden
           if (this.activeCategory === 'schuelerstundenplan') {
             this.loadSchuelerStundenPlaene();
+          } else if (this.activeCategory === 'stundentafel') {
+            this.loadStundentafelTemplates();
           } else {
             this.loadFromDatabase();
           }
@@ -5617,6 +5772,28 @@ export default {
     },
     async editItem(item) {
       try {
+        // Stundentafel-Template: Details laden und in den Editor
+        if (this.activeCategory === 'stundentafel') {
+          const res = await fetch(`${API_URL}?action=get_stundentafel_template&id=${item.id}`);
+          const json = await res.json();
+          if (json.success) {
+            this.currentTemplate = {
+              id: json.data.id,
+              name: json.data.name,
+              eintraege: (json.data.eintraege || []).map(e => ({
+                fach_id: e.fach_id,
+                fach_name: e.fach_name,
+                farbe: e.fach_farbe,
+                soll_klassenverbund: Number(e.soll_klassenverbund) || 0,
+                soll_differenzierung: Number(e.soll_differenzierung) || 0
+              }))
+            };
+            this.view = 'editor';
+          } else {
+            this.showStatus(json.error || 'Template konnte nicht geladen werden', 'error');
+          }
+          return;
+        }
         // 1. Einfache Kategorien: Daten liegen bereits lokal vor (in 'item')
         const einfacheKategorien = ['erstkraft', 'zweitkraft', 'raum', 'schulfach'];
 
@@ -7483,6 +7660,107 @@ export default {
       this.activeCategory = category;
       this.view = 'list';
       history.pushState({view: 'list', category: category}, '', '#list');
+      if (category === 'stundentafel') this.loadStundentafelTemplates();
+    },
+    async loadStundentafelTemplates() {
+      if (!this.currentSchuljahrId) return;
+      try {
+        const res = await fetch(`${API_URL}?action=load_stundentafel_templates&schuljahr_id=${this.currentSchuljahrId}`);
+        const json = await res.json();
+        if (json.success) this.stundentafelTemplates = json.data || [];
+      } catch (e) {
+        console.error('Fehler beim Laden der Stundentafel-Vorlagen:', e);
+      }
+    },
+    addFachToTemplate(fach) {
+      if (!fach) return;
+      if (this.currentTemplate.eintraege.some(e => String(e.fach_id) === String(fach.id))) {
+        this.showStatus('Fach ist bereits in der Vorlage.', 'error');
+        return;
+      }
+      this.currentTemplate.eintraege.push({
+        fach_id: fach.id, fach_name: fach.name, farbe: fach.farbe,
+        soll_klassenverbund: 0, soll_differenzierung: 0
+      });
+      this.activeDropdown = null;
+    },
+    removeTemplateEintrag(index) {
+      this.currentTemplate.eintraege.splice(index, 1);
+    },
+    async saveTemplate() {
+      const name = (this.currentTemplate.name || '').trim();
+      if (!name) { this.showStatus('Bitte einen Namen eingeben.', 'error'); return; }
+      try {
+        const res = await fetch(`${API_URL}?action=save_stundentafel_template`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            id: this.currentTemplate.id,
+            schuljahr_id: this.currentSchuljahrId,
+            name,
+            eintraege: this.currentTemplate.eintraege.map(e => ({
+              fach_id: e.fach_id,
+              soll_klassenverbund: e.soll_klassenverbund,
+              soll_differenzierung: e.soll_differenzierung
+            }))
+          })
+        });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Speichern fehlgeschlagen');
+        this.showStatus('Stundentafel-Vorlage gespeichert!');
+        await this.loadStundentafelTemplates();
+        this.view = 'list';
+      } catch (e) {
+        console.error('Fehler beim Speichern der Vorlage:', e);
+        this.showStatus('Fehler: ' + e.message, 'error');
+      }
+    },
+    async openTemplateModal() {
+      await this.loadStundentafelTemplates();
+      this.showTemplateModal = true;
+    },
+    applyTemplate(template) {
+      const eintraege = template.eintraege || [];
+      // Mirror von saveFachToStundentafel: gleiche Datenform -> gleicher Speicherpfad.
+      if (this.activeCategory === 'schuelerstundenplan') {
+        eintraege.forEach(e => {
+          const kv = Number(e.soll_klassenverbund) || 0;
+          const diff = Number(e.soll_differenzierung) || 0;
+          const daten = {fach_id: e.fach_id, name: e.fach_name, farbe: e.farbe, soll_klassenverbund: kv, soll_differenzierung: diff, soll: kv + diff};
+          const idx = this.stundentafel.findIndex(s => s.name === e.fach_name);
+          if (idx !== -1) this.stundentafel[idx] = {...this.stundentafel[idx], ...daten};
+          else this.stundentafel.push({id: Date.now() + Math.random(), ...daten});
+        });
+      } else if (this.activeCategory === 'lehrerstundenplan') {
+        const list = this.currentLehrerstundenplan.lehrer_stundentafel;
+        eintraege.forEach(e => {
+          const kv = Number(e.soll_klassenverbund) || 0;
+          const diff = Number(e.soll_differenzierung) || 0;
+          const daten = {fach_id: e.fach_id, aktivitaet_id: null, bezeichnung: e.fach_name, name: e.fach_name, farbe: e.farbe, soll_klassenverbund: kv, soll_differenzierung: diff, soll: kv + diff};
+          const idx = list.findIndex(s => s.bezeichnung === e.fach_name);
+          if (idx !== -1) list[idx] = {...list[idx], ...daten};
+          else list.push({id: Date.now() + Math.random(), ...daten});
+        });
+      }
+      this.showTemplateModal = false;
+      this.showStatus('Vorlage übernommen – zum Sichern bitte speichern.');
+    },
+    async chooseTemplate(id) {
+      try {
+        const res = await fetch(`${API_URL}?action=get_stundentafel_template&id=${id}`);
+        const json = await res.json();
+        if (!json.success) { this.showStatus(json.error || 'Vorlage konnte nicht geladen werden', 'error'); return; }
+        const data = {
+          ...json.data,
+          eintraege: (json.data.eintraege || []).map(e => ({
+            fach_id: e.fach_id, fach_name: e.fach_name, farbe: e.fach_farbe,
+            soll_klassenverbund: e.soll_klassenverbund, soll_differenzierung: e.soll_differenzierung
+          }))
+        };
+        this.applyTemplate(data);
+      } catch (e) {
+        console.error('Fehler beim Anwenden der Vorlage:', e);
+        this.showStatus('Fehler beim Anwenden der Vorlage', 'error');
+      }
     },
     openQuickAdd(type, index = null) {
       console.log("QuickAdd aufgerufen für:", type, "Index:", index); // Zum Debuggen in der Konsole
