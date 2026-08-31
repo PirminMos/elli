@@ -455,7 +455,7 @@
           </div>
 
           <div class="input-group full-width">
-            <label>Pflichtstundenmaße</label>
+            <label>Regelstundenmaße</label>
             <div v-for="(mass, index) in currentZweitkraft.pflichtstunden_masse" :key="index"
                  class="mass-row-item glass-input">
               <div class="input-row-triple">
@@ -500,7 +500,7 @@
             </div>
 
             <button class="glass-btn btn-add-inline" @click="addPflichtstundenMass">
-              <span class="icon">+</span> Pflichtstundenmaß hinzufügen
+              <span class="icon">+</span> Regelstundenmaß hinzufügen
             </button>
           </div>
 
@@ -1462,14 +1462,14 @@
                     </div>
                   </div>
                   <div class="slider-container">
-                    <input type="range" min="0" max="20" step="1" v-model="newTafelEntry.soll_klassenverbund"
+                    <input type="range" min="0" max="25" step="1" v-model="newTafelEntry.soll_klassenverbund"
                            class="custom-slider">
                   </div>
                 </div>
                 <div class="slider-labels">
                   <span>0</span>
                   <span>10</span>
-                  <span>20</span>
+                  <span>25</span>
                 </div>
                 <div class="slider-group">
                   <div class="zeile">
@@ -1485,9 +1485,9 @@
                     </div>
                   </div>
                   <div class="slider-container">
-                    <input type="range" min="0" max="20" step="1" v-model="newTafelEntry.soll_differenzierung"
+                    <input type="range" min="0" max="25" step="1" v-model="newTafelEntry.soll_differenzierung"
                            class="custom-slider">
-                    <div class="slider-labels"><span>0</span><span>10</span><span>20</span></div>
+                    <div class="slider-labels"><span>0</span><span>10</span><span>25</span></div>
                   </div>
                 </div>
               </template>
@@ -1505,14 +1505,14 @@
                     </div>
                   </div>
                   <div class="slider-container">
-                    <input type="range" min="0" max="20" step="1" v-model.number="einheiten_kv"
+                    <input type="range" min="0" max="25" step="1" v-model.number="einheiten_kv"
                            class="custom-slider">
                   </div>
                 </div>
                 <div class="slider-labels">
                   <span>0</span>
                   <span>10</span>
-                  <span>20</span>
+                  <span>25</span>
                 </div>
                 <div class="slider-group">
                   <div class="zeile">
@@ -1526,9 +1526,9 @@
                     </div>
                   </div>
                   <div class="slider-container">
-                    <input type="range" min="0" max="20" step="1" v-model="einheiten_diff"
+                    <input type="range" min="0" max="25" step="1" v-model="einheiten_diff"
                            class="custom-slider">
-                    <div class="slider-labels"><span>0</span><span>10</span><span>20</span></div>
+                    <div class="slider-labels"><span>0</span><span>10</span><span>25</span></div>
                   </div>
                 </div>
               </template>
