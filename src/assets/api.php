@@ -1303,49 +1303,6 @@ if ($action === 'save_zweitkraft') {
     exit;
 }
 
-if ($action === 'import_document') {
-    if (!isset($_FILES['document'])) {
-        echo json_encode(["success" => false, "error" => "Keine Datei hochgeladen"]);
-        exit;
-    }
-
-    $file = $_FILES['document'];
-    $tmpPath = $file['tmp_name'];
-    $fileName = $file['name'];
-    $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-
-    try {
-        if ($extension === 'doc') {
-            // Antiword ausführen und Fehler in die Variable umleiten (2>&1)
-            $command = "antiword -w 0 " . escapeshellarg($tmpPath) . " 2>&1";
-            $extractedText = shell_exec($command);
-
-            if ($extractedText === null || strpos($extractedText, 'not found') !== false) {
-                throw new Exception("Antiword ist auf dem Server nicht installiert oder ein Fehler ist aufgetreten.");
-            }
-        } else {
-            throw new Exception("Aktuell werden nur .doc Dateien unterstützt.");
-        }
-
-        // SICHERE KODIERUNG (Ersatz für utf8_encode)
-        $utf8Text = mb_convert_encoding($extractedText, 'UTF-8', 'UTF-8');
-
-        echo json_encode([
-            "success" => true,
-            "file" => $fileName,
-            "text" => $utf8Text
-        ]);
-
-    } catch (Exception $e) {
-        // Falls ein Fehler auftritt, senden wir ihn sauber als JSON zurück
-        echo json_encode([
-            "success" => false,
-            "error" => $e->getMessage()
-        ]);
-    }
-    exit;
-}
-
 if ($action === 'save_schuelerstundenplan') {
     $json = file_get_contents('php://input');
     $data = json_decode($json, true);
