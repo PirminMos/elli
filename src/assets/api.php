@@ -1716,32 +1716,12 @@ if ($action === 'export_lehrerstundenplan') {
             $byTag[$t['tag']][] = $t;
         }
 
-        // 3b. Schulfach-Blöcke zusammenfassen: ein Schulfach belegt nur EINE Zeile.
-        //     Das Frontend legt ein mehrstündiges Fach als mehrere 45-min-Termine an;
-        //     aufeinanderfolgende, zeitlich anschließende Termine desselben Fachs
-        //     (gleiche Klasse & Differenzierung) werden zu einer Zeitspanne verschmolzen.
-        //     Aktivitäten bleiben unangetastet.
+        // 3b. Jede Schulstunde wird EINZELN ausgewiesen (keine Zusammenfassung).
+        //     Auch ein mehrstündig zusammenhängendes Fach erscheint Stunde für
+        //     Stunde mit eigener Zeitangabe. Wir sortieren nur nach Startzeit.
         foreach ($byTag as $tag => $liste) {
             usort($liste, function ($a, $b) { return strcmp($a['start'], $b['start']); });
-            $merged = [];
-            foreach ($liste as $t) {
-                $istFach = trim((string)$t['fach']) !== '';
-                $n = count($merged);
-                if ($istFach && $n > 0
-                    && trim((string)$merged[$n - 1]['fach']) !== ''
-                    && trim((string)$merged[$n - 1]['fach'])   === trim((string)$t['fach'])
-                    && trim((string)$merged[$n - 1]['klasse']) === trim((string)$t['klasse'])
-                    && (int)$merged[$n - 1]['is_differenzierung'] === (int)$t['is_differenzierung']
-                    && $t['start'] <= $merged[$n - 1]['ende']) {
-                    // Gleiches Fach schließt direkt an -> Zeitspanne verlängern statt neue Zeile
-                    if ($t['ende'] > $merged[$n - 1]['ende']) {
-                        $merged[$n - 1]['ende'] = $t['ende'];
-                    }
-                    continue;
-                }
-                $merged[] = $t;
-            }
-            $byTag[$tag] = $merged;
+            $byTag[$tag] = $liste;
         }
 
         // 4. UPZ-Aufschlüsselung aus lehrer_stundentafel: Gesamtstunden in Schulfächern
