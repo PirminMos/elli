@@ -102,18 +102,9 @@ function elli_finde_konflikte(PDO $conn, array $opts) {
             // keine Fenster hinterlegt -> Raum gilt als durchgängig verfügbar
         }
 
-        $sql = "SELECT COALESCE(sf.name, a.name, 'Termin') AS bez, t.start, t.ende
-                FROM termin_raeume tr
-                JOIN termin t ON t.id = tr.termin_id
-                LEFT JOIN schulfach sf ON sf.id = t.schulfach_id
-                LEFT JOIN aktivitaet a ON a.id = t.aktivitaet_id
-                WHERE tr.raum_id = ? AND t.tag = ? AND t.start < ? AND t.ende > ?" . $exSql . " LIMIT 1";
-        $stmt = $conn->prepare($sql);
-        $stmt->execute(array_merge([$rid, $tag, $ende, $start], $excludes));
-        if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $konflikte[] = "❌ Raum belegt: {$raum['name']} durch \"{$row['bez']}\" (" .
-                substr($row['start'],0,5) . "–" . substr($row['ende'],0,5) . ")";
-        }
+        // Raum-Doppelbelegung ist bewusst KEIN Blocker mehr: Mehrere Klassen
+        // duerfen sich einen Raum teilen (z.B. gemeinsamer Sport). Die
+        // Ueberbuchung wird im Frontend beim Ablegen der Stunde bestaetigt.
     }
 
     // 2. Erst-/Zweitkräfte: Doppelbelegung
@@ -883,20 +874,9 @@ if ($action === 'save_activity') {
                         }
                     }
 
-                    // Raum-Belegung prüfen
-                    $sqlRaum = "SELECT r.name, COALESCE(a.name, 'Unterricht') as akt_name
-                                FROM termin_raeume tr
-                                JOIN raum r ON tr.raum_id = r.id
-                                JOIN termin t ON tr.termin_id = t.id
-                                LEFT JOIN aktivitaet a ON t.aktivitaet_id = a.id
-                                WHERE t.tag = ? AND tr.raum_id = ? AND (t.start < ? AND t.ende > ?)";
-                    $paramsRaum = [$tag, $raumId, $ende, $start];
-                    if ($aktId) { $sqlRaum .= " AND (t.aktivitaet_id IS NULL OR t.aktivitaet_id != ?)"; $paramsRaum[] = $aktId; }
-                    $stmt = $conn->prepare($sqlRaum);
-                    $stmt->execute($paramsRaum);
-                    if ($row = $stmt->fetch()) {
-                        $konflikte[] = "❌ Raum belegt: " . $row['name'] . " durch '" . $row['akt_name'] . "'";
-                    }
+                    // Raum-Doppelbelegung ist bewusst KEIN Blocker mehr:
+                    // Mehrere Klassen duerfen sich einen Raum teilen. Die
+                    // Ueberbuchung wird im Frontend beim Ablegen bestaetigt.
                 }
 
                 // --- B) LEHRKRÄFTE-VERFÜGBARKEIT PRÜFEN ---
@@ -2560,10 +2540,14 @@ if ($action === 'get_raum_verfuegbarkeit') {
 
     try {
         $sql = "select
-                	r.id, r.name, r.unterrichtsfach, r.immer_verfuegbar, tr.termin_id, t.start, t.ende, t.tag, t.schulfach_id, t.aktivitaet_id
+                	r.id, r.name, r.unterrichtsfach, r.immer_verfuegbar, tr.termin_id, t.start, t.ende, t.tag, t.schulfach_id, t.aktivitaet_id,
+                	k.name as klasse_name, COALESCE(sf.name, a.name, 'Termin') as bez
                 from raum as r
                 left join termin_raeume as tr on tr.raum_id = r.id
                 left join termin as t on tr.termin_id = t.id
+                left join klassen as k on k.id = t.klassen_id
+                left join schulfach as sf on sf.id = t.schulfach_id
+                left join aktivitaet as a on a.id = t.aktivitaet_id
                 where r.schuljahr_id = ?";
 
         $stmt = $conn->prepare($sql);
@@ -2606,7 +2590,9 @@ if ($action === 'get_raum_verfuegbarkeit') {
                             'ende'          => $row['ende'],
                             'termin_id'     => $row['termin_id'],
                             'fach_id'       => $row['schulfach_id'],
-                            'aktivitaet_id' => $row['aktivitaet_id']
+                            'aktivitaet_id' => $row['aktivitaet_id'],
+                            'klasse'        => $row['klasse_name'],
+                            'bez'           => $row['bez']
                         ];
                     }
                 }
