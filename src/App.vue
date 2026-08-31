@@ -1971,15 +1971,19 @@
   </transition>
 
   <transition name="fade">
-    <div v-if="dialog.show" class="elli-dialog-overlay"
+    <div v-if="dialog.show" class="modal-overlay elli-dialog-overlay"
          @click.self="_dialogClose(dialog.mode === 'confirm' ? false : true)">
-      <div class="elli-dialog" role="dialog" aria-modal="true">
-        <div v-if="dialog.title" class="elli-dialog-title">{{ dialog.title }}</div>
-        <div class="elli-dialog-message">{{ dialog.message }}</div>
-        <div class="elli-dialog-actions">
-          <button v-if="dialog.mode === 'confirm'" class="elli-dialog-btn secondary"
+      <div class="modal-content glass-modal elli-dialog-box" role="dialog" aria-modal="true">
+        <div v-if="dialog.title" class="modal-header">
+          <h3>{{ dialog.title }}</h3>
+        </div>
+        <div class="modal-body">
+          <p class="elli-dialog-message">{{ dialog.message }}</p>
+        </div>
+        <div class="modal-footer">
+          <button v-if="dialog.mode === 'confirm'" class="glass-btn-cancel"
                   @click="_dialogClose(false)">{{ dialog.cancelText }}</button>
-          <button ref="dialogOk" class="elli-dialog-btn primary"
+          <button ref="dialogOk" class="glass-btn-save"
                   @click="_dialogClose(true)"
                   @keydown.esc="_dialogClose(dialog.mode === 'confirm' ? false : true)">{{ dialog.okText }}</button>
         </div>
@@ -4570,80 +4574,20 @@ input:checked + .slider:before {
   transform: rotate(180deg);
 }
 
-/* --- elli-Dialog (Ersatz fuer native confirm()/alert()) --- */
+/* --- elli-Dialog: nutzt das weisse Glas-Modal-Design (modal-content glass-modal);
+   hier nur wenige Ergaenzungen. --- */
 .elli-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
+  z-index: 10000; /* ueber anderen Modals */
 }
 
-.elli-dialog {
-  background: #1f1f1f;
-  color: #ffffff;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  width: 100%;
-  max-width: 420px;
-  padding: 24px 26px;
-}
-
-.elli-dialog-title {
-  font-size: 1.15rem;
-  font-weight: 600;
-  margin-bottom: 10px;
-  color: #ffffff;
+.elli-dialog-box {
+  max-width: 460px;
 }
 
 .elli-dialog-message {
-  font-size: 0.98rem;
+  margin: 0;
   line-height: 1.55;
-  color: #e6e6e6;
-  white-space: pre-wrap;
-}
-
-.elli-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 24px;
-}
-
-.elli-dialog-btn {
-  padding: 9px 20px;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  font-size: 0.95rem;
-  font-weight: 500;
-  transition: background 0.15s, transform 0.05s;
-}
-
-.elli-dialog-btn.primary {
-  background: #4f8cff;
-  color: #ffffff;
-}
-
-.elli-dialog-btn.primary:hover {
-  background: #3f78e0;
-}
-
-.elli-dialog-btn.secondary {
-  background: #3a3a3a;
-  color: #e0e0e0;
-}
-
-.elli-dialog-btn.secondary:hover {
-  background: #474747;
-}
-
-.elli-dialog-btn:active {
-  transform: translateY(1px);
+  white-space: pre-wrap; /* Zeilenumbrueche der Ueberbuchungs-Liste erhalten */
 }
 </style>
 <script setup>
@@ -6115,7 +6059,7 @@ export default {
     handleDragEnd() {
       this.draggingId = null; // Zurücksetzen
     },
-    handleDrop(event, tag, stunde) {
+    async handleDrop(event, tag, stunde) {
       event.preventDefault();
       this.dragOverCell = null;
 
@@ -6180,26 +6124,23 @@ export default {
         console.log("Schuelerstundenplan Item", item);
         console.log("Prüfe Räume:", raumIdsToCheck, "für", tag, stunde.start, 'bis', stunde.ende, "Exclude:", excludeId);
 
-        // Wir prüfen, ob JEDER Raum im Array verfügbar ist
-        let alleVerfuegbar = true;
-
+        // Geschlossener Raum (Öffnungszeiten) bleibt ein harter Blocker.
         for (const raumId of raumIdsToCheck) {
-          const check = this.isRaumVerfuegbar(
-              raumId,
-              tag,
-              stunde.start,
-              stunde.ende,
-              excludeId
-          );
-
-          if (check !== true) {
-            alleVerfuegbar = false;
-            break; // Sofort aufhören, wenn ein Raum belegt ist
+          if (this.raumGeschlossen(raumId, tag, stunde.start, stunde.ende)) {
+            const r = this.raumVerfuegbarkeiten.find(x => String(x.id) === String(raumId));
+            this.showStatus(`${r ? r.name : 'Raum'} ist zu dieser Zeit geschlossen.`, 'error');
+            return;
           }
         }
 
-        if (!alleVerfuegbar) {
-          return; // Abbrechen
+        // Raum-Doppelbelegung -> Warnung mit Rückfrage (Überbuchung erlauben).
+        const kollisionen = this.raumKollisionen(raumIdsToCheck, tag, stunde.start, stunde.ende, excludeId);
+        if (kollisionen.length > 0) {
+          const text = 'Dieser Raum ist zu dieser Zeit bereits belegt:\n\n' + kollisionen.join('\n') +
+              '\n\nMöchtest du den Raum trotzdem überbuchen?';
+          if (!await this.elliConfirm(text, 'Raum überbuchen?')) {
+            return; // Abgelehnt -> Stunde nicht setzen
+          }
         }
       }
 
@@ -6585,17 +6526,28 @@ export default {
       let endeNeu = this.lehrerPlanForm.ende;
       const tagNeu = this.lehrerPlanForm.tag;
 
+      // Geschlossener Raum (Öffnungszeiten) bleibt ein harter Blocker.
       for (const eintrag of this.lehrerPlanForm.raum_ids) {
-        const verfuegbar = this.isRaumVerfuegbar(
-            eintrag,
-            this.lehrerPlanForm.tag,
-            this.lehrerPlanForm.start,
-            this.lehrerPlanForm.ende,
-            this.lehrerPlanForm.termin_id
-        );
+        if (this.raumGeschlossen(eintrag, this.lehrerPlanForm.tag, this.lehrerPlanForm.start, this.lehrerPlanForm.ende)) {
+          const r = this.raumVerfuegbarkeiten.find(x => String(x.id) === String(eintrag));
+          this.showStatus(`${r ? r.name : 'Raum'} ist zu dieser Zeit geschlossen.`, 'error');
+          return;
+        }
+      }
 
-        if (!verfuegbar) {
-          return; // Diese Zeile beendet jetzt die gesamte Methode!
+      // Raum-Doppelbelegung -> Warnung mit Rückfrage (Überbuchung erlauben).
+      const raumKollisionen = this.raumKollisionen(
+          this.lehrerPlanForm.raum_ids,
+          this.lehrerPlanForm.tag,
+          this.lehrerPlanForm.start,
+          this.lehrerPlanForm.ende,
+          this.lehrerPlanForm.termin_id
+      );
+      if (raumKollisionen.length > 0) {
+        const text = 'Dieser Raum ist zu dieser Zeit bereits belegt:\n\n' + raumKollisionen.join('\n') +
+            '\n\nMöchtest du den Raum trotzdem überbuchen?';
+        if (!await this.elliConfirm(text, 'Raum überbuchen?')) {
+          return; // Abgelehnt
         }
       }
 
@@ -7099,6 +7051,40 @@ export default {
     // Diese Methode hilft uns im Template zu prüfen, ob etwas offen ist
     isDropdownOpen(id) {
       return this.activeDropdown === id;
+    },
+    // Prüft, ob ein Raum zur gewünschten Zeit GESCHLOSSEN ist (Öffnungszeiten).
+    // Das bleibt ein harter Blocker – anders als die Doppelbelegung.
+    raumGeschlossen(raumId, tag, start, ende) {
+      const raum = this.raumVerfuegbarkeiten.find(r => String(r.id) === String(raumId));
+      if (!raum) return false;
+      if (raum.immer_verfuegbar === 1 || !raum.verfuegbarkeiten || raum.verfuegbarkeiten.length === 0) return false;
+      // Immer auf HH:MM normalisieren, sonst vergleicht "10:00" fälschlich mit "10:00:00".
+      const s = (start || '').slice(0, 5), e = (ende || '').slice(0, 5);
+      const hatSlot = raum.verfuegbarkeiten.some(v =>
+          v.tag === tag && s >= (v.start || '').slice(0, 5) && e <= (v.ende || '').slice(0, 5));
+      return !hatSlot;
+    },
+    // Liefert kollidierende Belegungen eines/mehrerer Räume als lesbare Zeilen
+    // ("Raum: Klasse – Fach (HH:MM–HH:MM)") für die Überbuchungs-Warnung.
+    raumKollisionen(raumIds, tag, start, ende, excludeId = null) {
+      const ids = Array.isArray(raumIds) ? raumIds : [raumIds];
+      const s = (start || '').slice(0, 5), e = (ende || '').slice(0, 5);
+      const treffer = [];
+      for (const rid of ids) {
+        const raum = this.raumVerfuegbarkeiten.find(r => String(r.id) === String(rid));
+        if (!raum || !raum.termine) continue;
+        for (const t of raum.termine) {
+          if (excludeId != null && String(t.termin_id) === String(excludeId)) continue;
+          if (t.tag !== tag) continue;
+          // HH:MM-Normalisierung: angrenzende Stunden (09:00 Ende / 09:00 Start) kollidieren NICHT.
+          const ts = (t.start || '').slice(0, 5), te = (t.ende || '').slice(0, 5);
+          if (s < te && e > ts) {
+            const wer = t.klasse ? `${t.klasse} – ${t.bez || 'Termin'}` : (t.bez || 'Termin');
+            treffer.push(`• ${raum.name}: ${wer} (${ts}–${te})`);
+          }
+        }
+      }
+      return treffer;
     },
     isRaumVerfuegbar(raum_id, tag, start, ende, termin_id = null) {
       // 1. Den richtigen Raum aus dem Array finden.
