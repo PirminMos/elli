@@ -313,6 +313,121 @@ if ($action === 'copy_schuljahr_data') {
     exit;
 }
 
+// =====================================================================
+// STUNDENTAFEL-TEMPLATES (wiederverwendbare Faecher+Stunden-Vorlagen)
+// =====================================================================
+
+// Stellt sicher, dass die Template-Tabellen existieren (auch auf bestehenden
+// DBs ohne Migrationssystem).
+function elli_ensure_template_tables(PDO $conn) {
+    $conn->exec("CREATE TABLE IF NOT EXISTS stundentafel_template (
+        id INT(11) NOT NULL AUTO_INCREMENT,
+        schuljahr_id INT(11) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        PRIMARY KEY (id),
+        KEY idx_sttpl_schuljahr (schuljahr_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $conn->exec("CREATE TABLE IF NOT EXISTS stundentafel_template_eintrag (
+        id INT(11) NOT NULL AUTO_INCREMENT,
+        template_id INT(11) NOT NULL,
+        fach_id INT(11) DEFAULT NULL,
+        soll_klassenverbund DECIMAL(5,2) NOT NULL DEFAULT 0,
+        soll_differenzierung DECIMAL(5,2) NOT NULL DEFAULT 0,
+        PRIMARY KEY (id),
+        KEY idx_sttpl_e_template (template_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+// Liste aller Templates eines Schuljahres (fuer Uebersicht + Auswahl-Modal).
+if ($action === 'load_stundentafel_templates') {
+    $sid = isset($_GET['schuljahr_id']) ? (int)$_GET['schuljahr_id'] : 0;
+    try {
+        elli_ensure_template_tables($conn);
+        $stmt = $conn->prepare("SELECT t.id, t.name,
+                                       (SELECT COUNT(*) FROM stundentafel_template_eintrag e WHERE e.template_id = t.id) AS eintrag_anzahl
+                                FROM stundentafel_template t
+                                WHERE t.schuljahr_id = ? ORDER BY t.name");
+        $stmt->execute([$sid]);
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// Ein Template inkl. seiner Eintraege (Faecher + Stunden) laden.
+if ($action === 'get_stundentafel_template') {
+    $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+    try {
+        elli_ensure_template_tables($conn);
+        $stmt = $conn->prepare("SELECT id, name, schuljahr_id FROM stundentafel_template WHERE id = ?");
+        $stmt->execute([$id]);
+        $tpl = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$tpl) { echo json_encode(['success' => false, 'error' => 'Template nicht gefunden']); exit; }
+
+        $stmtE = $conn->prepare("SELECT e.fach_id, e.soll_klassenverbund, e.soll_differenzierung, s.name AS fach_name, s.farbe AS fach_farbe
+                                 FROM stundentafel_template_eintrag e
+                                 LEFT JOIN schulfach s ON s.id = e.fach_id
+                                 WHERE e.template_id = ?");
+        $stmtE->execute([$id]);
+        $eintraege = array_map(function ($r) {
+            return [
+                'fach_id'              => (int)$r['fach_id'],
+                'fach_name'            => $r['fach_name'],
+                'fach_farbe'           => $r['fach_farbe'],
+                'soll_klassenverbund'  => (float)$r['soll_klassenverbund'],
+                'soll_differenzierung' => (float)$r['soll_differenzierung'],
+            ];
+        }, $stmtE->fetchAll(PDO::FETCH_ASSOC));
+
+        echo json_encode(['success' => true, 'data' => [
+            'id' => (int)$tpl['id'], 'name' => $tpl['name'],
+            'schuljahr_id' => (int)$tpl['schuljahr_id'], 'eintraege' => $eintraege
+        ]]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// Template anlegen/aktualisieren (Eintraege werden komplett ersetzt).
+if ($action === 'save_stundentafel_template') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $sid = (int)($data['schuljahr_id'] ?? 0);
+    $name = trim((string)($data['name'] ?? ''));
+    $id = isset($data['id']) && $data['id'] ? (int)$data['id'] : null;
+    if (!$sid || $name === '') {
+        echo json_encode(['success' => false, 'error' => 'Schuljahr und Name sind Pflicht']);
+        exit;
+    }
+    try {
+        elli_ensure_template_tables($conn);
+        $conn->beginTransaction();
+        if ($id) {
+            $conn->prepare("UPDATE stundentafel_template SET name = ? WHERE id = ?")->execute([$name, $id]);
+        } else {
+            $conn->prepare("INSERT INTO stundentafel_template (schuljahr_id, name) VALUES (?, ?)")->execute([$sid, $name]);
+            $id = (int)$conn->lastInsertId();
+        }
+        // Eintraege: Clean Slate
+        $conn->prepare("DELETE FROM stundentafel_template_eintrag WHERE template_id = ?")->execute([$id]);
+        $insE = $conn->prepare("INSERT INTO stundentafel_template_eintrag (template_id, fach_id, soll_klassenverbund, soll_differenzierung) VALUES (?, ?, ?, ?)");
+        foreach (($data['eintraege'] ?? []) as $e) {
+            $fachId = !empty($e['fach_id']) ? (int)$e['fach_id'] : null;
+            if (!$fachId) continue;
+            $kv = str_replace(',', '.', (string)($e['soll_klassenverbund'] ?? 0));
+            $diff = str_replace(',', '.', (string)($e['soll_differenzierung'] ?? 0));
+            $insE->execute([$id, $fachId, $kv, $diff]);
+        }
+        $conn->commit();
+        echo json_encode(['success' => true, 'id' => $id]);
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 // --- EINSTELLUNGEN LADEN ---
 if ($action === 'get_settings') {
     try {
@@ -1064,7 +1179,8 @@ if ($action === 'delete_element') {
         'erstkraft'  => 'erstkraft',
         'zweitkraft' => 'zweitkraft',
         'schulfach'  => 'schulfach',
-        'schuelerstundenplan' => 'klassen' // WICHTIG!
+        'schuelerstundenplan' => 'klassen', // WICHTIG!
+        'stundentafel' => 'stundentafel_template'
     ];
 
     if ($id && isset($mapping[$type])) {
@@ -1092,6 +1208,10 @@ if ($action === 'delete_element') {
                 // 5. Die Klasse selbst löschen
                 $stmt = $conn->prepare("DELETE FROM klassen WHERE id = ?");
                 $stmt->execute([$id]);
+            } elseif ($type === 'stundentafel') {
+                // Template + seine Eintraege löschen
+                $conn->prepare("DELETE FROM stundentafel_template_eintrag WHERE template_id = ?")->execute([$id]);
+                $conn->prepare("DELETE FROM stundentafel_template WHERE id = ?")->execute([$id]);
             } else {
                 // Standard-Löschung für einfache Stammdaten
                 $stmt = $conn->prepare("DELETE FROM `$table` WHERE id = ?");

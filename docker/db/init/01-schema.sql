@@ -180,4 +180,22 @@ CREATE TABLE IF NOT EXISTS `termin_verantwortliche` (
   PRIMARY KEY (`termin_id`, `kraft_id`, `kraft_typ`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `stundentafel_template` (
+  `id`           INT(11)      NOT NULL AUTO_INCREMENT,
+  `schuljahr_id` INT(11)      NOT NULL,
+  `name`         VARCHAR(255) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_sttpl_schuljahr` (`schuljahr_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `stundentafel_template_eintrag` (
+  `id`                   INT(11)      NOT NULL AUTO_INCREMENT,
+  `template_id`          INT(11)      NOT NULL,
+  `fach_id`              INT(11)      DEFAULT NULL,
+  `soll_klassenverbund`  DECIMAL(5,2) NOT NULL DEFAULT 0,
+  `soll_differenzierung` DECIMAL(5,2) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_sttpl_e_template` (`template_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;
