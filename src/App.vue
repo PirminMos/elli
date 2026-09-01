@@ -43,6 +43,7 @@
 
         <div class="menu-item settings-section">
           <h3>Einstellungen</h3>
+          <div class="settings-grid">
           <div class="input-group">
             <label>Dein Anzeigename</label>
             <input
@@ -51,6 +52,27 @@
                 type="text"
                 class="glass-input"
             >
+          </div>
+          <div class="input-group">
+            <label>Dein Nachname</label>
+            <input v-model="nachname" type="text" class="glass-input">
+          </div>
+          <div class="input-group">
+            <label>Dein Titel</label>
+            <input v-model="titel" type="text" class="glass-input">
+          </div>
+          <div class="input-group">
+            <label>Genehmiger</label>
+            <input v-model="genehmiger" type="text" class="glass-input">
+          </div>
+          <div class="input-group">
+            <label>Schuljahresbeginn</label>
+            <input v-model="schuljahrBeginn" type="date" class="glass-input">
+          </div>
+          <div class="input-group">
+            <label>Schuljahresende</label>
+            <input v-model="schuljahrEnde" type="date" class="glass-input">
+          </div>
           </div>
         </div>
 
@@ -2271,12 +2293,33 @@ select:focus {
   position: fixed;
   top: 0;
   left: 0;
-  width: 350px; /* Etwas breiter für die Jahreszahl */
+  width: 560px; /* Breiter für die zweispaltige Feld-Anordnung */
+  max-width: 92vw;
   height: 100vh;
   padding: 120px 40px 40px 60px; /* Oben Platz lassen für den Header */
+  box-sizing: border-box;
+  overflow-y: auto; /* Scrollbar: unten wird nichts mehr abgeschnitten */
   z-index: 100;
   background: rgba(30, 30, 30, 0.9);
   backdrop-filter: blur(20px);
+}
+
+/* Zwei Eingabefelder nebeneinander */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 20px;
+}
+
+.settings-grid .input-group {
+  min-width: 0; /* erlaubt dem Grid-Kind zu schrumpfen (sonst Overflow durch date-Inputs) */
+}
+
+.settings-grid .input-group input,
+.settings-grid .input-group .glass-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Sidebar: Schiebt sich von links rein */
@@ -4826,6 +4869,11 @@ export default {
     return {
       view: 'home',
       nutzerName: localStorage.getItem('nutzerName') || 'Nutzer',
+      nachname: '',
+      titel: '',
+      genehmiger: '',
+      schuljahrBeginn: '',
+      schuljahrEnde: '',
       isHardwareBack: false,
       showSettings: false,
       showTypeDropdown: false,
@@ -5484,6 +5532,7 @@ export default {
             stadt: adressDaten.stadt || ''
           };
         }
+        this.applySchuljahrMeta();
       } catch (e) {
         console.error("Fehler beim Laden der Schuljahre:", e);
       }
@@ -8221,9 +8270,41 @@ export default {
     async loadSettings() {
       const response = await fetch(`${API_URL}?action=get_settings`);
       const data = await response.json();
-      if (data.nutzername) {
-        this.nutzerName = data.nutzername;
+      if (data.nutzername) this.nutzerName = data.nutzername;
+    },
+    // Fuellt die schuljahr-spezifischen Felder aus dem aktuell gewaehlten Schuljahr.
+    applySchuljahrMeta() {
+      const sj = (this.schuljahre || []).find(s => s.id === this.currentSchuljahrId);
+      this.titel           = sj ? (sj.titel || '') : '';
+      this.nachname        = sj ? (sj.nachname || '') : '';
+      this.genehmiger      = sj ? (sj.genehmiger || '') : '';
+      this.schuljahrBeginn = sj ? (sj.schuljahr_beginn || '') : '';
+      this.schuljahrEnde   = sj ? (sj.schuljahr_ende || '') : '';
+    },
+    saveAllSettings() {
+      // Anzeigename ist global; Nachname/Titel/Genehmiger/Beginn/Ende gehoeren zum Schuljahr.
+      const p1 = fetch(`${API_URL}?action=save_setting`, {
+        method: 'POST',
+        body: JSON.stringify({schluessel: 'nutzername', wert: this.nutzerName})
+      });
+      let p2 = Promise.resolve();
+      if (this.currentSchuljahrId) {
+        p2 = fetch(`${API_URL}?action=save_schuljahr_meta`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            schuljahr_id: this.currentSchuljahrId,
+            titel: this.titel,
+            nachname: this.nachname,
+            genehmiger: this.genehmiger,
+            schuljahr_beginn: this.schuljahrBeginn,
+            schuljahr_ende: this.schuljahrEnde
+          })
+        });
       }
+      return Promise.all([p1, p2])
+        .then(() => { this.showStatus('Einstellungen gespeichert'); return this.fetchSchuljahre(); })
+        .catch(e => console.error('Fehler beim Speichern der Einstellungen:', e));
     },
     async saveAddressManual() {
       if (!this.currentSchuljahrId) {
@@ -8266,6 +8347,7 @@ export default {
     selectYear(yearObj) {
       this.currentSchuljahrId = yearObj.id;
       this.currentSchuljahr = yearObj.schuljahr;
+      this.applySchuljahrMeta();
 
       this.aktivitaeten = [];
       this.erstkraefte = [];
@@ -8297,7 +8379,10 @@ export default {
       this.showSettings = false;
     },
     toggleMenu() {
+      const wasOpen = this.showSettings;
       this.showSettings = !this.showSettings;
+      // Beim Schließen des Burger-Menüs die Einstellungen in die DB schreiben.
+      if (wasOpen && !this.showSettings) this.saveAllSettings();
     },
     // Verzögert das Speichern um 500ms (Debouncing)
     triggerAutoSave() {
