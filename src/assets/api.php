@@ -176,12 +176,58 @@ function elli_finde_konflikte(PDO $conn, array $opts) {
 }
 
 // --- SCHULJAHRE LADEN ---
+// Stellt sicher, dass die schuljahr-spezifischen Zusatzspalten existieren
+// (Selbstheilung auf bestehenden DBs, kein Migrationssystem noetig).
+function elli_ensure_schule_columns(PDO $conn) {
+    $conn->exec("ALTER TABLE schule
+        ADD COLUMN IF NOT EXISTS titel VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS nachname VARCHAR(255) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS genehmiger VARCHAR(255) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS schuljahr_beginn DATE DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS schuljahr_ende DATE DEFAULT NULL");
+}
+
 if ($action === 'get_schuljahre') {
     try {
-        $stmt = $conn->query("SELECT id, schuljahr, adresse FROM schule ORDER BY id DESC");
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        elli_ensure_schule_columns($conn);
+        $stmt = $conn->query("SELECT id, schuljahr, adresse, titel, nachname, genehmiger,
+                                     DATE_FORMAT(schuljahr_beginn, '%Y-%m-%d') AS schuljahr_beginn,
+                                     DATE_FORMAT(schuljahr_ende, '%Y-%m-%d') AS schuljahr_ende
+                              FROM schule ORDER BY id DESC");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$r) {
+            $r['titel']            = $r['titel'] ?? '';
+            $r['nachname']         = $r['nachname'] ?? '';
+            $r['genehmiger']       = $r['genehmiger'] ?? '';
+            $r['schuljahr_beginn'] = $r['schuljahr_beginn'] ?? '';
+            $r['schuljahr_ende']   = $r['schuljahr_ende'] ?? '';
+        }
+        unset($r);
+        echo json_encode($rows);
     } catch (PDOException $e) {
         echo json_encode(["error" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// Schuljahr-spezifische Metadaten (Nachname/Titel/Genehmiger/Beginn/Ende) speichern.
+if ($action === 'save_schuljahr_meta') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $sid = (int)($data['schuljahr_id'] ?? 0);
+    if (!$sid) { echo json_encode(['success' => false, 'error' => 'Kein Schuljahr']); exit; }
+    $beginn = (($data['schuljahr_beginn'] ?? '') !== '') ? $data['schuljahr_beginn'] : null;
+    $ende   = (($data['schuljahr_ende'] ?? '') !== '') ? $data['schuljahr_ende'] : null;
+    try {
+        elli_ensure_schule_columns($conn);
+        $stmt = $conn->prepare("UPDATE schule SET titel = ?, nachname = ?, genehmiger = ?,
+                                       schuljahr_beginn = ?, schuljahr_ende = ? WHERE id = ?");
+        $stmt->execute([
+            $data['titel'] ?? '', $data['nachname'] ?? '', $data['genehmiger'] ?? '',
+            $beginn, $ende, $sid
+        ]);
+        echo json_encode(['success' => true]);
+    } catch (PDOException $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
     exit;
 }
