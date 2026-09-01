@@ -2629,20 +2629,22 @@ if ($action === 'save_klasse') {
 
         $stmtInsRaster = $conn->prepare("INSERT INTO klassen_zeitraster (klasse_id, stunden_index, startzeit, endzeit) VALUES (?, ?, ?, ?)");
 
-        $startTime = new DateTime('08:15');
-        $duration = new DateInterval('PT45M');
-
+        // Feste Zeiten fuer die ersten 6 Stunden (mit Pausen), danach 45-min-Takt.
+        $fix = [
+            ['08:15', '09:00'], ['09:00', '09:45'], ['10:05', '10:50'],
+            ['10:50', '11:35'], ['11:45', '12:30'], ['12:30', '13:15']
+        ];
         for ($i = 1; $i <= 10; $i++) {
-            $startStr = $startTime->format('H:i');
-            $startTime->add($duration);
-            $endStr = $startTime->format('H:i');
-
-            $stmtInsRaster->execute([
-                $klasseId,
-                $i,
-                $startStr,
-                $endStr
-            ]);
+            if ($i <= count($fix)) {
+                [$startStr, $endStr] = $fix[$i - 1];
+            } else {
+                // Ab der 7. Stunde im Dreiviertelstundentakt (ab 13:15).
+                $offset = ($i - count($fix) - 1) * 45;
+                $t = (new DateTime('13:15'))->modify("+{$offset} minutes");
+                $startStr = $t->format('H:i');
+                $endStr = $t->modify('+45 minutes')->format('H:i');
+            }
+            $stmtInsRaster->execute([$klasseId, $i, $startStr, $endStr]);
         }
 
         // Erst wenn ALLES fertig ist, Erfolg melden

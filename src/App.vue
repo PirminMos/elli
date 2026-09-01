@@ -4810,12 +4810,18 @@ const addMinutesToTime = (time, mins) => {
 };
 
 const generateDefaultRaster = () => {
-  let start = 8 * 60 + 15;
-  return Array.from({length: 10}, (_, i) => ({
-    id: i + 1,
-    start: formatTime(start + i * 45),
-    ende: formatTime(start + (i + 1) * 45)
-  }));
+  const fix = [
+    ['08:15', '09:00'], ['09:00', '09:45'], ['10:05', '10:50'],
+    ['10:50', '11:35'], ['11:45', '12:30'], ['12:30', '13:15']
+  ];
+  const raster = fix.map((z, i) => ({id: i + 1, start: z[0], ende: z[1]}));
+  // Ab der 7. Stunde im Dreiviertelstundentakt weiter (ab 13:15).
+  let start = 13 * 60 + 15;
+  for (let i = fix.length; i < 10; i++) {
+    raster.push({id: i + 1, start: formatTime(start), ende: formatTime(start + 45)});
+    start += 45;
+  }
+  return raster;
 };
 
 function formatTime(mins) {
@@ -8545,12 +8551,17 @@ export default {
       return `${h}:${m}`;
     },
     generateDefaultRaster() {
-      let start = 8 * 60 + 15;
-      return Array.from({length: 10}, (_, i) => ({
-        id: i + 1,
-        start: this.formatTime(start + i * 45),
-        ende: this.formatTime(start + (i + 1) * 45)
-      }));
+      const fix = [
+        ['08:15', '09:00'], ['09:00', '09:45'], ['10:05', '10:50'],
+        ['10:50', '11:35'], ['11:45', '12:30'], ['12:30', '13:15']
+      ];
+      const raster = fix.map((z, i) => ({id: i + 1, start: z[0], ende: z[1]}));
+      let start = 13 * 60 + 15;
+      for (let i = fix.length; i < 10; i++) {
+        raster.push({id: i + 1, start: this.formatTime(start), ende: this.formatTime(start + 45)});
+        start += 45;
+      }
+      return raster;
     },
     async saveActivity() {
       try {
