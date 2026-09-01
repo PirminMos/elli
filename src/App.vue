@@ -5813,7 +5813,16 @@ export default {
               upz: Number(item.upz) || 0
             };
           } else if (this.activeCategory === 'zweitkraft') {
-            this.currentZweitkraft = {...item};
+            // Das Backend liefert den Regelstundenwert als 'soll_stunden',
+            // das Bearbeitungsformular bindet aber an 'stunden'. Beim Laden
+            // normalisieren, sonst bleibt das Feld leer / zeigt NaN.
+            this.currentZweitkraft = {
+              ...item,
+              pflichtstunden_masse: (item.pflichtstunden_masse || []).map(m => ({
+                ...m,
+                stunden: Number(m.stunden ?? m.soll_stunden ?? 0)
+              }))
+            };
           } else if (this.activeCategory === 'raum') {
             console.log("raumtest", item.id);
             const response = await fetch(`${API_URL}?action=get_raum_details&id=${item.id}`);

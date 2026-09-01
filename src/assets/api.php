@@ -1323,7 +1323,9 @@ if ($action === 'save_zweitkraft') {
             ");
 
             foreach ($data['pflichtstunden_masse'] as $mass) {
-                $sollStunden = $mass['soll_stunden'] ?? $mass['stunden'] ?? 0;
+                // Das Bearbeitungsformular liefert den Wert als 'stunden';
+                // 'soll_stunden' nur als Fallback (z.B. unveraenderte Alt-Datensaetze).
+                $sollStunden = $mass['stunden'] ?? $mass['soll_stunden'] ?? 0;
                 // Nur speichern, wenn Stunden, Ort oder Aktivität gefüllt sind
                 if (!empty($sollStunden) || !empty($mass['einsatzort']) || !empty($mass['aktivitaet_id'])) {
                     $stmtIns->execute([
