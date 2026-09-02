@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "314bce3",
+      "hash": "ccddfc1",
+      "date": "2026-09-02",
+      "subject": "Fix: Update-Skript aus einer Kopie starten"
+    },
+    {
+      "hash": "04374a8",
       "date": "2026-09-02",
       "subject": "Fix: Zeilenenden fuer alle Textdateien normalisieren"
     },

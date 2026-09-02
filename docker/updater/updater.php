@@ -44,10 +44,10 @@ function git(string $repo, array $args, ?string &$ausgabe = null): int
     return $code;
 }
 
-/** Laeuft gerade ein Update-Skript? */
+/** Laeuft gerade ein Update-Skript? (siehe Kopie in /update: update-lauf.sh) */
 function laeuftUpdate(): bool
 {
-    $treffer = trim((string)@shell_exec('pgrep -f "/app/update.sh" 2>/dev/null'));
+    $treffer = trim((string)@shell_exec('pgrep -f "update-lauf.sh" 2>/dev/null'));
     return $treffer !== '';
 }
 
@@ -194,10 +194,19 @@ switch ($pfad) {
             break;
         }
         @unlink($LOG);
+        // Mit einer Kopie arbeiten: das Update aktualisiert unter Umstaenden
+        // update.sh selbst, und die Shell liest ihr Skript waehrend des Laufs
+        // haeppchenweise nach – eine Aenderung mittendrin waere fatal.
+        $laufSkript = $STATE . '/update-lauf.sh';
+        if (!@copy($SKRIPT, $laufSkript)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Update-Skript nicht gefunden.']);
+            break;
+        }
         // Im Hintergrund starten und sofort antworten – der Fortschritt wird
         // ueber /status abgeholt. Ohne nohup/& wuerde die Anfrage minutenlang
         // haengen und der eingebaute PHP-Server nichts anderes mehr annehmen.
-        exec('nohup sh ' . escapeshellarg($SKRIPT) . ' >> ' . escapeshellarg($LOG) . ' 2>&1 &');
+        exec('nohup sh ' . escapeshellarg($laufSkript) . ' >> ' . escapeshellarg($LOG) . ' 2>&1 &');
         usleep(300000); // kurz warten, damit /status direkt "laeuft" meldet
         echo json_encode(['gestartet' => true] + lauf($LOG), JSON_UNESCAPED_UNICODE);
         break;
