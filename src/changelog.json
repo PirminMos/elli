@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "136187a",
+      "hash": "54262e8",
+      "date": "2026-09-02",
+      "subject": "Feature: Fach im Schuelerstundenplan, Lehrername kleiner darunter"
+    },
+    {
+      "hash": "47c4410",
       "date": "2026-09-02",
       "subject": "Aendere Schuelerstundenplan: Legende einzeilig in 6,5 pt"
     },

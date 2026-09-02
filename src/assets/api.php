@@ -2212,13 +2212,16 @@ if ($action === 'export_schuelerstundenplan') {
         // 3. Termine der Klasse inkl. aller verantwortlichen Lehrkräfte (Namen)
         $stmtT = $conn->prepare("
             SELECT t.tag, t.start,
+                   COALESCE(s.name, a.name) AS fach,
                    GROUP_CONCAT(DISTINCT COALESCE(e.name, z.name) ORDER BY COALESCE(e.name, z.name) SEPARATOR ' / ') AS lehrer
             FROM termin t
             LEFT JOIN termin_verantwortliche tv ON tv.termin_id = t.id
             LEFT JOIN erstkraft  e ON e.id = tv.kraft_id AND tv.kraft_typ = 'erst'
             LEFT JOIN zweitkraft z ON z.id = tv.kraft_id AND tv.kraft_typ = 'zweit'
+            LEFT JOIN schulfach  s ON s.id = t.schulfach_id
+            LEFT JOIN aktivitaet a ON a.id = t.aktivitaet_id
             WHERE t.klassen_id = ?
-            GROUP BY t.id, t.tag, t.start
+            GROUP BY t.id, t.tag, t.start, fach
         ");
         $stmtT->execute([$klasse_id]);
 
@@ -2231,19 +2234,21 @@ if ($action === 'export_schuelerstundenplan') {
             return $parts[0];
         };
 
-        // Lehrer je (Tag, Startzeit) sammeln – mehrere Termine (z.B. äußere
-        // Differenzierung mit zwei Gruppen) ergeben zwei Namen im Slot.
+        // Fach + Lehrer je (Tag, Startzeit) sammeln – mehrere Termine (z.B. äußere
+        // Differenzierung mit zwei Gruppen) ergeben zwei Eintraege im Slot.
         $tage = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
-        $belegung = []; // [start]['Montag'] = ['Nachname1','Nachname2']
+        $belegung = []; // [start]['Montag'] = [['fach' => 'Deutsch', 'lehrer' => 'Muster'], ...]
         foreach ($stmtT->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $start = $hhmm($r['start']);
             $tag = $r['tag'];
             if (!in_array($tag, $tage, true)) continue;
+            $fach = trim((string)$r['fach']);
             foreach (explode(' / ', (string)$r['lehrer']) as $name) {
                 $name = $nachname($name);
-                if ($name === '') continue;
+                if ($name === '' && $fach === '') continue;
                 if (!isset($belegung[$start][$tag])) $belegung[$start][$tag] = [];
-                if (!in_array($name, $belegung[$start][$tag], true)) $belegung[$start][$tag][] = $name;
+                $eintrag = ['fach' => $fach, 'lehrer' => $name];
+                if (!in_array($eintrag, $belegung[$start][$tag], true)) $belegung[$start][$tag][] = $eintrag;
             }
         }
 
@@ -2341,22 +2346,34 @@ if ($action === 'export_schuelerstundenplan') {
             $headCells[] = $tcell($para($tagName, true, 18, 'center'), $DAYW, 2, 'D9D9D9');
         $wtRows = [$trow($headCells, 320)];
 
+        // Inhalt einer Rasterzelle: Fach fett, darunter der Lehrername deutlich
+        // kleiner (9 pt gegen 6 pt).
+        $zelle = function ($eintrag) use ($para) {
+            $inhalt = '';
+            if (($eintrag['fach'] ?? '') !== '')   $inhalt .= $para($eintrag['fach'], true, 18, 'center');
+            if (($eintrag['lehrer'] ?? '') !== '') $inhalt .= $para($eintrag['lehrer'], false, 12, 'center');
+            return $inhalt !== '' ? $inhalt : $para('----', false, 18, 'center');
+        };
+
         $tagKey = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag'];
         foreach ($raster as $slot) {
             $start = $hhmm($slot['startzeit']);
             $cells = [$tcell($para($zeitLabel($slot['startzeit'], $slot['endzeit']), false, 18, 'center'), $ZW)];
             foreach ($tagKey as $tag) {
-                $namen = $belegung[$start][$tag] ?? [];
-                if (count($namen) >= 2) {
-                    // Äußere Differenzierung: Zelle in zwei Zellen teilen (ein Name je Gruppe)
-                    $links  = $namen[0];
-                    $rechts = count($namen) > 2 ? implode(' / ', array_slice($namen, 1)) : $namen[1];
-                    $cells[] = $tcell($para($links, false, 18, 'center'), $SUB);
-                    $cells[] = $tcell($para($rechts, false, 18, 'center'), $SUB);
+                $eintraege = $belegung[$start][$tag] ?? [];
+                if (count($eintraege) >= 2) {
+                    // Äußere Differenzierung: Zelle in zwei Zellen teilen (eine je Gruppe)
+                    $links  = $zelle($eintraege[0]);
+                    $rechts = count($eintraege) > 2
+                        ? $zelle(['fach'   => $eintraege[1]['fach'],
+                                  'lehrer' => implode(' / ', array_column(array_slice($eintraege, 1), 'lehrer'))])
+                        : $zelle($eintraege[1]);
+                    $cells[] = $tcell($links, $SUB);
+                    $cells[] = $tcell($rechts, $SUB);
                 } else {
-                    // Ein Name (oder leer): eine Zelle über beide Sub-Spalten
-                    $txt = $namen ? $namen[0] : '----';
-                    $cells[] = $tcell($para($txt, false, 18, 'center'), $DAYW, 2);
+                    // Ein Eintrag (oder leer): eine Zelle über beide Sub-Spalten
+                    $inhalt = $eintraege ? $zelle($eintraege[0]) : $para('----', false, 18, 'center');
+                    $cells[] = $tcell($inhalt, $DAYW, 2);
                 }
             }
             $wtRows[] = $trow($cells, 460);
