@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "e677f3f",
+      "hash": "f7030d9",
+      "date": "2026-09-02",
+      "subject": "Doku: Update-per-Klick im README erwaehnen"
+    },
+    {
+      "hash": "b011a2e",
       "date": "2026-09-02",
       "subject": "Feature: Update per Klick aus der Weboberflaeche"
     },

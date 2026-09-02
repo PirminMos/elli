@@ -36,6 +36,9 @@ Pläne, die sich als Word-Dokumente exportieren lassen.
   Datenbank-Dumps (`scripts/backup.sh` / `scripts/restore.sh`).
 - **Auto-Deploy** – ein Git-Hook baut den Stack nach jedem `git pull`
   automatisch neu.
+- **Update per Klick** – ein Symbol neben dem Versionshinweis prüft auf neue
+  Versionen und aktualisiert die Anwendung auf Wunsch selbst (holen, neu
+  bauen, neu starten), während ein Fortschrittsfenster die Oberfläche sperrt.
 
 ## Technik
 
