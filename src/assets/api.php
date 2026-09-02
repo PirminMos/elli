@@ -1845,10 +1845,18 @@ if ($action === 'export_lehrerstundenplan') {
 
         $adresse = json_decode($schule['adresse'] ?? '', true) ?: [];
         $nameZeilen = preg_split('/\r\n|\r|\n/', trim($adresse['name'] ?? ''));
-        $schule1 = trim($nameZeilen[0] ?? '');
-        $schule2 = trim(implode(' ', array_slice($nameZeilen, 1)));
         $ortTeile = array_filter([trim($adresse['strasse'] ?? ''), trim($adresse['stadt'] ?? '')]);
-        $schule3 = implode(', ', $ortTeile);
+        // Adresse ohne leere Zwischenzeile: nicht-leere Teile von oben nach unten
+        // in die drei Slots packen, damit leere Slots ans Ende rutschen statt eine
+        // Leerzeile zwischen Schulname und Straße/Ort zu erzeugen.
+        $adressZeilen = array_values(array_filter([
+            trim($nameZeilen[0] ?? ''),
+            trim(implode(' ', array_slice($nameZeilen, 1))),
+            implode(', ', $ortTeile),
+        ], fn($z) => $z !== ''));
+        $schule1 = $adressZeilen[0] ?? '';
+        $schule2 = $adressZeilen[1] ?? '';
+        $schule3 = $adressZeilen[2] ?? '';
 
         // 2. Lehrkraft
         $stmtE = $conn->prepare("SELECT name, titel, pflichtstunden, ermaessigung, ermaessigung_grund, upz
@@ -1936,6 +1944,7 @@ if ($action === 'export_lehrerstundenplan') {
         $tpl->setValue('erm', $esc($e['ermaessigung']));
         $tpl->setValue('grund', $esc($e['ermaessigung_grund']));
         $tpl->setValue('erstellt', date('d.m.y'));
+        $tpl->setValue('genehmigt', date('d.m.y', strtotime('+1 day')));
         $tpl->setValue('ersteller', $esc($ersteller));
 
         // Tages-Slots: Präfix + Anzahl freier Zeilen im Template
@@ -2274,9 +2283,9 @@ if ($action === 'export_schuelerstundenplan') {
         $FW = 4762;
         $fuss = $tbl([$FW, $FW, $FW], [
             $trow([
-                $tcell($para('erstellt am ' . date('d.m.y') . '  durch ' . $ersteller, false, 18), $FW),
-                $tcell($para('Genehmigt am ____________  durch ____________', false, 18), $FW),
-                $tcell($para('gesehen am ____________', false, 18), $FW),
+                $tcell($para('Erstellt am ' . date('d.m.y') . '  durch ' . $ersteller, false, 18), $FW),
+                $tcell($para('Genehmigt am ' . date('d.m.y', strtotime('+1 day')) . '  durch ____________', false, 18), $FW),
+                $tcell($para('Gesehen am ____________', false, 18), $FW),
             ], 300),
             $trow([
                 $tcell($para('Unterschrift Klassenleiter/in: ____________', false, 18), $FW),
@@ -3246,10 +3255,17 @@ if ($action === 'get_raum_verfuegbarkeit') {
 
           $adresse = json_decode($schule['adresse'] ?? '', true) ?: [];
           $nameZeilen = preg_split('/\r\n|\r|\n/', trim($adresse['name'] ?? ''));
-          $schule1 = trim($nameZeilen[0] ?? '');
-          $schule2 = trim(implode(' ', array_slice($nameZeilen, 1)));
           $ortTeile = array_filter([trim($adresse['strasse'] ?? ''), trim($adresse['stadt'] ?? '')]);
-          $schule3 = implode(', ', $ortTeile);
+          // Adresse ohne leere Zwischenzeile: nicht-leere Teile von oben nach unten
+          // packen, damit leere Slots ans Ende rutschen statt in die Mitte.
+          $adressZeilen = array_values(array_filter([
+              trim($nameZeilen[0] ?? ''),
+              trim(implode(' ', array_slice($nameZeilen, 1))),
+              implode(', ', $ortTeile),
+          ], fn($z) => $z !== ''));
+          $schule1 = $adressZeilen[0] ?? '';
+          $schule2 = $adressZeilen[1] ?? '';
+          $schule3 = $adressZeilen[2] ?? '';
 
           // 2. Zweitkraft
           $stmtZ = $conn->prepare("SELECT name, typ, upz, ermaessigung, grund_ermaessigung
@@ -3314,6 +3330,7 @@ if ($action === 'get_raum_verfuegbarkeit') {
           $tpl->setValue('erm', $esc($z['ermaessigung']));
           $tpl->setValue('grund', $esc($z['grund_ermaessigung']));
           $tpl->setValue('erstellt', date('d.m.y'));
+          $tpl->setValue('genehmigt', date('d.m.y', strtotime('+1 day')));
 
           // Tages-Slots: Präfix + Anzahl freier Zeilen im Template
           $slots = [
