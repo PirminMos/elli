@@ -254,6 +254,25 @@ function elli_ensure_zweitkraft_stundentafel_columns(PDO $conn) {
         ADD COLUMN IF NOT EXISTS beruf_index TINYINT(1) NOT NULL DEFAULT 1");
 }
 
+// Selbstheilung: Ermaessigung und UPZ als Dezimalwerte (z.B. 2,5 Stunden).
+// Aeltere Datenbanken haben hier INT(11) und wuerden Nachkommastellen runden.
+// MODIFY baut die Tabelle neu, deshalb vorher pruefen, ob es noetig ist.
+function elli_ensure_dezimal_stunden(PDO $conn) {
+    $stmt = $conn->query("
+        SELECT TABLE_NAME, COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME  IN ('erstkraft', 'zweitkraft')
+          AND COLUMN_NAME IN ('ermaessigung', 'upz')
+          AND DATA_TYPE <> 'decimal'
+    ");
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $spalte) {
+        // Tabellen-/Spaltennamen stammen aus der Whitelist oben, kein User-Input.
+        $conn->exec("ALTER TABLE `{$spalte['TABLE_NAME']}`
+            MODIFY COLUMN `{$spalte['COLUMN_NAME']}` DECIMAL(6,2) DEFAULT 0");
+    }
+}
+
 // Selbstheilung: Zweit-/Drittberuf und Geschlechts-Flag der Zweitkraft.
 // typ2/typ3 halten die kanonische (weibliche) Berufsbezeichnung; maennlich
 // steuert nur die Anzeige (Opt-In auf die maennliche Form).
@@ -696,9 +715,18 @@ if ($action === 'load_editor_data') {
         $res = [];
 
         // Erstkräfte des gewählten Jahres
+        elli_ensure_dezimal_stunden($conn);
         $stmt = $conn->prepare("SELECT * FROM erstkraft WHERE schuljahr_id = :sid ORDER BY name ASC");
         $stmt->execute([':sid' => $sid]);
-        $res['erstkraefte'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $erstkraefte = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($erstkraefte as &$ek) {
+            // DECIMAL kommt als String aus PDO – als Zahl ausliefern, damit im
+            // Frontend gerechnet und nicht versehentlich verkettet wird.
+            $ek['ermaessigung'] = (float)$ek['ermaessigung'];
+            $ek['upz']          = (float)$ek['upz'];
+        }
+        unset($ek);
+        $res['erstkraefte'] = $erstkraefte;
 
         // Zweitkräfte des gewählten Jahres
         elli_ensure_zweitkraft_columns($conn);
@@ -708,6 +736,8 @@ if ($action === 'load_editor_data') {
 
                 elli_ensure_zweitkraft_stundentafel_columns($conn);
                 foreach ($zweitkraefte as &$zk) {
+                    $zk['ermaessigung'] = (float)$zk['ermaessigung'];
+                    $zk['upz']          = (float)$zk['upz'];
                     $stmtM = $conn->prepare("
                         SELECT zst.id, zst.aktivitaet_id, a.name AS aktivitaet_name,
                                zst.einsatzort, zst.soll_stunden, zst.besetzung_typ,
@@ -1285,6 +1315,7 @@ if ($action === 'save_erstkraft') {
     $data = json_decode(file_get_contents('php://input'), true);
 
     try {
+        elli_ensure_dezimal_stunden($conn);
         if (isset($data['id']) && $data['id']) {
             // Update bestehend
             $stmt = $conn->prepare("UPDATE erstkraft SET
@@ -1392,6 +1423,7 @@ if ($action === 'save_zweitkraft') {
         // transaction" scheitern.
         elli_ensure_zweitkraft_columns($conn);
         elli_ensure_zweitkraft_stundentafel_columns($conn);
+        elli_ensure_dezimal_stunden($conn);
 
         $conn->beginTransaction();
 
@@ -1902,6 +1934,7 @@ if ($action === 'export_lehrerstundenplan') {
         $fmtStunden = function ($h) {
             $s = number_format((float)$h, 2, ',', '');
             if (substr($s, -1) === '0') $s = substr($s, 0, -1);
+            if (substr($s, -1) === '0') $s = substr($s, 0, -1);
             if (substr($s, -1) === ',') $s = substr($s, 0, -1);
             return $s;
         };
@@ -1986,7 +2019,7 @@ if ($action === 'export_lehrerstundenplan') {
         foreach ($aktivitaetSummen as $name => $stunden) {
             $upzTeile[] = $fmtStunden($stunden) . ' ' . $name;
         }
-        $upzText = $e['upz'] . (count($upzTeile) ? ' (' . implode(', ', $upzTeile) . ')' : '');
+        $upzText = $fmtStunden($e['upz']) . (count($upzTeile) ? ' (' . implode(', ', $upzTeile) . ')' : '');
 
         // 5. Ersteller: Anzeigename aus den Einstellungen (nutzername)
         $stmtU = $conn->prepare("SELECT wert FROM einstellungen WHERE schluessel = 'nutzername'");
@@ -2009,7 +2042,7 @@ if ($action === 'export_lehrerstundenplan') {
         $tpl->setValue('schule3', $esc($schule3));
         $tpl->setValue('regel', $esc($e['pflichtstunden']));
         $tpl->setValue('upz', $esc($upzText));
-        $tpl->setValue('erm', $esc($e['ermaessigung']));
+        $tpl->setValue('erm', $esc($fmtStunden($e['ermaessigung'])));
         $tpl->setValue('grund', $esc($e['ermaessigung_grund']));
         $tpl->setValue('erstellt', date('d.m.y'));
         $tpl->setValue('genehmigt', date('d.m.y', strtotime('+1 day')));
@@ -2657,8 +2690,8 @@ if ($action === 'get_lehrerstundenplan') {
                 'titel'               => $data[0]['titel'] ?? null,
                 'kuerzel'             => $data[0]['kuerzel'] ?? null,
                 'pflichtstunden'      => $data[0]['pflichtstunden'] ?? 0,
-                'ermaessigung'        => $data[0]['ermaessigung'] ?? 0,
-                'upz'                 => $data[0]['upz'] ?? 0,
+                'ermaessigung'        => (float)($data[0]['ermaessigung'] ?? 0),
+                'upz'                 => (float)($data[0]['upz'] ?? 0),
                 'termine'             => [],
                 'lehrer_stundentafel' => []
             ];
@@ -3313,6 +3346,8 @@ if ($action === 'get_raum_verfuegbarkeit') {
           $fmtStunden = function ($h) {
               $s = number_format((float)$h, 2, ',', '');
               if (substr($s, -1) === '0') $s = substr($s, 0, -1);
+              if (substr($s, -1) === '0') $s = substr($s, 0, -1);
+              if (substr($s, -1) === ',') $s = substr($s, 0, -1);
               return $s;
           };
 
@@ -3379,7 +3414,7 @@ if ($action === 'get_raum_verfuegbarkeit') {
               $pflichtTeile[] = $fmtStunden($p['summe']) . ' ' . $ort;
           }
           // Wenn Einsatzort-SOLL vorhanden: Aufschlüsselung, sonst reines UPZ-Maß
-          $pflichtText = $pflichtTeile ? implode(' + ', $pflichtTeile) : (string)$z['upz'];
+          $pflichtText = $pflichtTeile ? implode(' + ', $pflichtTeile) : $fmtStunden($z['upz']);
 
           // 4. Template befüllen
           $tplPath = __DIR__ . '/diensteinsatzplan_template.docx';
@@ -3397,7 +3432,7 @@ if ($action === 'get_raum_verfuegbarkeit') {
           $tpl->setValue('schule2', $esc($schule2));
           $tpl->setValue('schule3', $esc($schule3));
           $tpl->setValue('pflicht', $esc($pflichtText));
-          $tpl->setValue('erm', $esc($z['ermaessigung']));
+          $tpl->setValue('erm', $esc($fmtStunden($z['ermaessigung'])));
           $tpl->setValue('grund', $esc($z['grund_ermaessigung']));
           $tpl->setValue('erstellt', date('d.m.y'));
           $tpl->setValue('genehmigt', date('d.m.y', strtotime('+1 day')));
@@ -3585,9 +3620,9 @@ if ($action === 'get_raum_verfuegbarkeit') {
                   'kuerzel'                     => $z['kuerzel'],
                   'farbe'                       => $z['farbe'],
                   'textfarbe'                   => $z['textfarbe'],
-                  'ermaessigung'                => (int)$z['ermaessigung'],
+                  'ermaessigung'                => (float)$z['ermaessigung'],
                   'grund_ermaessigung'          => $z['grund_ermaessigung'],
-                  'upz'                         => (int)$z['upz'],
+                  'upz'                         => (float)$z['upz'],
                   'stundentafel'                => $stundentafelByZweitkraft[$zid] ?? [],
                   'termine'                     => array_values($termineByZweitkraft[$zid] ?? [])
               ];

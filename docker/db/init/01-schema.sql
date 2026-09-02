@@ -46,8 +46,9 @@ CREATE TABLE IF NOT EXISTS `erstkraft` (
   `kuerzel`            VARCHAR(10)  DEFAULT NULL,
   `farbe`              VARCHAR(7)   DEFAULT NULL,
   `pflichtstunden`     INT(11)      DEFAULT 0,
-  `ermaessigung`       INT(11)      DEFAULT 0,
-  `upz`                INT(11)      DEFAULT 0,
+  -- Ermaessigung und UPZ als Dezimalwerte (halbe/viertel Stunden moeglich)
+  `ermaessigung`       DECIMAL(6,2) DEFAULT 0,
+  `upz`                DECIMAL(6,2) DEFAULT 0,
   `faecher`            VARCHAR(255) DEFAULT NULL,
   `textfarbe`          VARCHAR(7)   DEFAULT '#ffffff',
   `ermaessigung_grund` VARCHAR(255) DEFAULT NULL,
@@ -66,9 +67,10 @@ CREATE TABLE IF NOT EXISTS `zweitkraft` (
   `kuerzel`            VARCHAR(10)  DEFAULT NULL,
   `farbe`              VARCHAR(7)   DEFAULT NULL,
   `textfarbe`          VARCHAR(7)   DEFAULT '#ffffff',
-  `ermaessigung`       INT(11)      DEFAULT 0,
+  -- Ermaessigung und UPZ als Dezimalwerte (halbe/viertel Stunden moeglich)
+  `ermaessigung`       DECIMAL(6,2) DEFAULT 0,
   `grund_ermaessigung` VARCHAR(255) DEFAULT NULL,
-  `upz`                INT(11)      DEFAULT 0,
+  `upz`                DECIMAL(6,2) DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_zweitkraft_schuljahr` (`schuljahr_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

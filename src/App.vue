@@ -447,14 +447,15 @@
             <div class="input-group">
               <label>Stundenermäßigung</label>
               <div class="custom-number-input">
-                <button @click="currentErstkraft.ermaessigung > 0 ? currentErstkraft.ermaessigung-- : null">-</button>
+                <button @click="stepErmaessigung(currentErstkraft, -0.5)">-</button>
                 <input
                     v-model.number="currentErstkraft.ermaessigung"
                     type="number"
                     min="0"
+                    step="0.5"
                     @input="validateErmaessigung"
                 >
-                <button @click="currentErstkraft.ermaessigung++">+</button>
+                <button @click="stepErmaessigung(currentErstkraft, 0.5)">+</button>
               </div>
             </div>
 
@@ -614,9 +615,10 @@
               <div class="input-group">
                 <label>Stundenermäßigung:</label>
                 <div class="custom-number-input">
-                  <button @click="currentZweitkraft.ermaessigung--">-</button>
-                  <input v-model="currentZweitkraft.ermaessigung" type="number" step="1" min="0">
-                  <button @click="currentZweitkraft.ermaessigung++">+</button>
+                  <button @click="stepErmaessigung(currentZweitkraft, -0.5)">-</button>
+                  <input v-model.number="currentZweitkraft.ermaessigung" type="number" step="0.5" min="0"
+                         @input="validateErmaessigungZweitkraft">
+                  <button @click="stepErmaessigung(currentZweitkraft, 0.5)">+</button>
                 </div>
               </div>
               <div class="input-group">
@@ -5870,6 +5872,23 @@ export default {
       const anteil = relevante > 0 ? ermaessigung / relevante : 0;
       return (stunden - anteil).toFixed(2);
     },
+    // Ermäßigungen dürfen Gleitkommazahlen sein (z.B. 2,5 Stunden). Die
+    // +/-Schaltflächen gehen daher in halben Stunden. Gerundet wird auf zwei
+    // Nachkommastellen – das hält Float-Artefakte (0.1 + 0.2) draußen und
+    // entspricht der DB-Spalte DECIMAL(6,2).
+    stepErmaessigung(ziel, schritt) {
+      const wert = (parseFloat(ziel.ermaessigung) || 0) + schritt;
+      ziel.ermaessigung = Math.max(0, Math.round(wert * 100) / 100);
+    },
+    // Beim Tippen nur negative Werte abfangen; Nachkommastellen bleiben
+    // unangetastet, damit "2,5" während der Eingabe nicht zerfällt.
+    validateErmaessigung() {
+      if (parseFloat(this.currentErstkraft.ermaessigung) < 0) this.currentErstkraft.ermaessigung = 0;
+      if (parseFloat(this.currentErstkraft.upz) < 0) this.currentErstkraft.upz = 0;
+    },
+    validateErmaessigungZweitkraft() {
+      if (parseFloat(this.currentZweitkraft.ermaessigung) < 0) this.currentZweitkraft.ermaessigung = 0;
+    },
     addVerfuegbarkeit() {
       if (!this.editingRaum.verfuegbarkeiten) {
         this.editingRaum.verfuegbarkeiten = [];
@@ -6097,6 +6116,8 @@ export default {
               ...item,
               berufe,
               maennlich: !!Number(item.maennlich),
+              // DECIMAL kann als String ankommen -> für die Rechnung als Zahl halten
+              ermaessigung: Number(item.ermaessigung) || 0,
               pflichtstunden_masse: (item.pflichtstunden_masse || []).map(m => ({
                 ...m,
                 stunden: Number(m.stunden ?? m.soll_stunden ?? 0),
@@ -8091,13 +8112,21 @@ export default {
       this.openQuickAdd('raum', index);
     },
     async saveErstkraft() {
-      if (this.currentErstkraft.pflichtstunden - (this.currentErstkraft.upz + this.currentErstkraft.ermaessigung) < 0) {
+      // Leeres Feld oder Komma-Eingabe soll die Rechnung nicht kippen
+      const pflicht = parseFloat(this.currentErstkraft.pflichtstunden) || 0;
+      const upz = parseFloat(this.currentErstkraft.upz) || 0;
+      const ermaessigung = Math.max(0, Math.round((parseFloat(this.currentErstkraft.ermaessigung) || 0) * 100) / 100);
+
+      if (pflicht - (upz + ermaessigung) < 0) {
         this.showStatus("Zu viele UPZ oder ermäßigte Stunden", "error");
         return;
       }
       try {
         const payload = {
           ...this.currentErstkraft,
+          pflichtstunden: pflicht,
+          upz: upz,
+          ermaessigung: ermaessigung,
           schuljahr_id: this.currentSchuljahrId
         };
 
@@ -8318,9 +8347,10 @@ export default {
           return sum + (parseFloat(m.stunden) || 0);
         }, 0);
 
-        // 2. UPZ berechnen (Pflicht - Ermäßigung)
-        const ermaessigung = parseFloat(this.currentZweitkraft.ermaessigung) || 0;
-        this.currentZweitkraft.upz = (gesamtPflicht - ermaessigung).toFixed(2);
+        // 2. UPZ berechnen (Pflicht - Ermäßigung); beides darf dezimal sein
+        const ermaessigung = Math.max(0, Math.round((parseFloat(this.currentZweitkraft.ermaessigung) || 0) * 100) / 100);
+        this.currentZweitkraft.ermaessigung = ermaessigung;
+        this.currentZweitkraft.upz = Math.round((gesamtPflicht - ermaessigung) * 100) / 100;
 
         // 3. Payload vorbereiten – Berufe-Array auf typ/typ2/typ3 abbilden.
         const berufe = (this.currentZweitkraft.berufe || []).filter(b => b && String(b).trim() !== '');

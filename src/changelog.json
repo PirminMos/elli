@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "176cb77",
+      "hash": "cc9a714",
+      "date": "2026-09-02",
+      "subject": "Feature: Ermaessigung als Gleitkommazahl (Erst- und Zweitkraft)"
+    },
+    {
+      "hash": "1bd3094",
       "date": "2026-09-02",
       "subject": "Feature: Endzeitpunkt im Plan-Modal eingeben statt Dauer"
     },
