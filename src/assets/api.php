@@ -175,6 +175,64 @@ function elli_finde_konflikte(PDO $conn, array $opts) {
     return $konflikte;
 }
 
+/**
+ * Ordnet einen Termin der passenden Rasterstunde EINER Klasse zu.
+ *
+ * Jede Klasse kann ein individuelles Schulstundenraster (klassen_zeitraster)
+ * haben. Ein Schulfach-Termin, der im Lehrerplan angelegt wird, traegt die
+ * frei gewaehlte Uhrzeit – aber NICHT die dazu passende stunden_id der
+ * gewaehlten Klasse. Diese Funktion bestimmt die Rasterstunde, in die die
+ * Startzeit faellt, und liefert deren stunden_index + exakte Zeiten zurueck,
+ * damit der Termin sauber im Schuelerstundenplan-Raster landet.
+ *
+ * Rueckgabe:
+ *   ['status' => 'ok',       'zr' => [...]]  passende Rasterstunde gefunden
+ *   ['status' => 'no_raster']                Klasse hat (noch) kein Raster -> nicht binden
+ *   ['status' => 'no_match', 'name' => ...]  Raster vorhanden, Startzeit passt in keine Stunde
+ *
+ * $cache haelt Raster + Klassenname je klasse_id vor (spart DB-Abfragen).
+ */
+function elli_finde_rasterstunde(PDO $conn, int $klasseId, string $start, array &$cache): array {
+    if (!isset($cache[$klasseId])) {
+        $stmt = $conn->prepare("SELECT stunden_index, startzeit, endzeit
+                                FROM klassen_zeitraster WHERE klasse_id = ?
+                                ORDER BY startzeit ASC");
+        $stmt->execute([$klasseId]);
+        $nStmt = $conn->prepare("SELECT name FROM klassen WHERE id = ?");
+        $nStmt->execute([$klasseId]);
+        $cache[$klasseId] = [
+            'raster' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+            'name'   => $nStmt->fetchColumn() ?: ('#' . $klasseId),
+        ];
+    }
+
+    $raster = $cache[$klasseId]['raster'];
+    $name   = $cache[$klasseId]['name'];
+
+    if (empty($raster)) {
+        return ['status' => 'no_raster'];
+    }
+
+    $startHM = substr($start, 0, 5);
+
+    // 1) Rasterstunde, die die Startzeit enthaelt (startzeit <= start < endzeit)
+    foreach ($raster as $zr) {
+        $zs = substr((string)$zr['startzeit'], 0, 5);
+        $ze = substr((string)$zr['endzeit'], 0, 5);
+        if ($startHM >= $zs && $startHM < $ze) {
+            return ['status' => 'ok', 'zr' => $zr];
+        }
+    }
+    // 2) Grenzfall: exakter Treffer der Startzeit
+    foreach ($raster as $zr) {
+        if (substr((string)$zr['startzeit'], 0, 5) === $startHM) {
+            return ['status' => 'ok', 'zr' => $zr];
+        }
+    }
+
+    return ['status' => 'no_match', 'name' => $name];
+}
+
 // --- SCHULJAHRE LADEN ---
 // Stellt sicher, dass die schuljahr-spezifischen Zusatzspalten existieren
 // (Selbstheilung auf bestehenden DBs, kein Migrationssystem noetig).
@@ -2854,8 +2912,33 @@ if ($action === 'get_raum_verfuegbarkeit') {
             //     (sie werden ersetzt oder gelöscht).
             $excludeIds = array_values(array_unique(array_merge($dbIds, $frontendIds)));
             $alleKonflikte = [];
-            foreach ($data['termine'] as $t) {
+            $rasterCache = [];
+            foreach ($data['termine'] as $idx => $t) {
                 if (empty($t['tag']) || empty($t['start']) || empty($t['ende'])) continue;
+
+                // Schulfach-Termine einer Klasse an DEREN individuelles Zeitraster
+                // binden: passende Rasterstunde suchen, stunden_id daraus ableiten
+                // und Start/Ende exakt auf die Rasterstunde angleichen. So landet der
+                // Termin im Schuelerstundenplan in der richtigen Schulstunde – statt
+                // (mangels stunden_id) in der Stunde mit der kleinsten ID.
+                if (!empty($t['klassen_id']) && !empty($t['fach_id'])) {
+                    $rast = elli_finde_rasterstunde($conn, (int)$t['klassen_id'], (string)$t['start'], $rasterCache);
+                    if ($rast['status'] === 'ok') {
+                        $zr = $rast['zr'];
+                        $data['termine'][$idx]['stunden_id'] = (int)$zr['stunden_index'];
+                        $data['termine'][$idx]['start']      = $zr['startzeit'];
+                        $data['termine'][$idx]['ende']       = $zr['endzeit'];
+                        // lokale Kopie fuer die nachfolgende Konfliktpruefung mitziehen
+                        $t['start'] = $zr['startzeit'];
+                        $t['ende']  = $zr['endzeit'];
+                    } elseif ($rast['status'] === 'no_match') {
+                        $alleKonflikte[] = "🕒 Klasse {$rast['name']}: " . substr((string)$t['start'], 0, 5) .
+                            " passt in keine Schulstunde des Klassenrasters.";
+                        continue; // nicht zusaetzlich auf Doppelbelegung pruefen
+                    }
+                    // 'no_raster' -> Klasse ohne gepflegtes Raster: stunden_id unveraendert lassen
+                }
+
                 $alleKonflikte = array_merge($alleKonflikte, elli_finde_konflikte($conn, [
                     'tag' => $t['tag'],
                     'start' => $t['start'],
