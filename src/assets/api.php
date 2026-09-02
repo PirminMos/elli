@@ -2014,8 +2014,22 @@ if ($action === 'export_lehrerstundenplan') {
         }
 
         // 3. Termine (Fach ODER Aktivität, plus Klasse und Differenzierung)
+        //
+        // Eine aeussere Differenzierung liegt als zwei parallele Termine derselben
+        // Klasse vor - je Gruppe einer. Das Kennzeichen haengt dabei nur an der
+        // abgespaltenen Gruppe, nicht am Termin der Hauptverantwortlichen. Fuer die
+        // Marke im Plan zaehlt aber die Stunde als Ganzes: 'gruppe_differenziert'
+        // meldet deshalb, ob es zur selben Zeit eine differenzierte Parallelstunde
+        // derselben Klasse im selben Fach gibt.
         $stmtT = $conn->prepare("SELECT t.tag, t.start, t.ende, t.is_differenzierung,
-                                         k.name AS klasse, s.name AS fach, a.name AS aktivitaet
+                                         k.name AS klasse, s.name AS fach, a.name AS aktivitaet,
+                                         (SELECT MAX(t2.is_differenzierung)
+                                            FROM termin t2
+                                           WHERE t2.klassen_id   = t.klassen_id
+                                             AND t2.schulfach_id = t.schulfach_id
+                                             AND t2.tag          = t.tag
+                                             AND t2.start < t.ende
+                                             AND t2.ende  > t.start) AS gruppe_differenziert
                                   FROM termin_verantwortliche tv
                                   JOIN termin t ON t.id = tv.termin_id
                                   LEFT JOIN klassen k ON k.id = t.klassen_id
@@ -2111,8 +2125,11 @@ if ($action === 'export_lehrerstundenplan') {
                     $fach = trim((string)($t['fach'] ?: $t['aktivitaet'] ?: '-'));
                     $klasse = trim((string)$t['klasse']);
                     // +/++ gilt nur für Schulfächer; Aktivitäten (Schulleitung, MSD, ...)
-                    // bekommen kein Zeichen.
-                    $marke = $istSchulfach ? (((int)$t['is_differenzierung'] === 1) ? '++' : '+') : '';
+                    // bekommen kein Zeichen. Geteilter Unterricht ist immer '++' –
+                    // auch im Plan der Hauptverantwortlichen, deren eigener Termin
+                    // das Kennzeichen nicht traegt.
+                    $geteilt = (int)$t['is_differenzierung'] === 1 || (int)$t['gruppe_differenziert'] === 1;
+                    $marke = $istSchulfach ? ($geteilt ? '++' : '+') : '';
                     $tpl->setValue($prefix . $i . 'z', $esc($zeit));
                     $tpl->setValue($prefix . $i . 'f', $esc($fach));
                     $tpl->setValue($prefix . $i . 'k', $esc($klasse));

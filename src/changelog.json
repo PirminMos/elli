@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "40f95a1",
+      "hash": "511181c",
+      "date": "2026-09-02",
+      "subject": "Fix: Geteilter Unterricht im Lehrerplan-Export immer als ++"
+    },
+    {
+      "hash": "9781f8d",
       "date": "2026-09-02",
       "subject": "Aendere Lehrer-Stundentafel: Anzeige in Schulstunden"
     },
