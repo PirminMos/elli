@@ -1,0 +1,30 @@
+#!/bin/sh
+# Aktualisiert src/changelog.json nach jedem Commit aus der Git-Historie
+# (inklusive des soeben erstellten Commits) und ergänzt ihn per --amend in
+# eben diesen Commit. So enthält der ausgelieferte Stand stets den aktuellen
+# Änderungsverlauf, ohne einem Commit hinterherzuhinken.
+#
+# Sicherungen:
+#  - ELLI_SKIP_CHANGELOG verhindert Endlos-Rekursion durch das eigene --amend.
+#  - Während Merge/Rebase/Cherry-Pick wird nicht eingegriffen.
+#  - Ohne node oder ohne Änderung passiert nichts.
+
+[ -n "$ELLI_SKIP_CHANGELOG" ] && exit 0
+
+cd "$(git rev-parse --show-toplevel)" || exit 0
+
+gitdir="$(git rev-parse --git-dir)"
+if [ -e "$gitdir/MERGE_HEAD" ] || [ -e "$gitdir/CHERRY_PICK_HEAD" ] || \
+   [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; then
+  exit 0
+fi
+
+command -v node >/dev/null 2>&1 || exit 0
+node scripts/gen-changelog.mjs || exit 0
+
+git add src/changelog.json 2>/dev/null || exit 0
+if ! git diff --cached --quiet -- src/changelog.json 2>/dev/null; then
+  ELLI_SKIP_CHANGELOG=1 git commit --amend --no-edit --no-verify >/dev/null 2>&1
+fi
+
+exit 0

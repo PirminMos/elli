@@ -124,7 +124,10 @@
           </button>
         </div>
 
-        <p v-if="versionsDatum" class="version-hint">Version vom {{ versionsDatum }}</p>
+        <p v-if="versionsDatum" class="version-hint">
+          <button type="button" class="version-hint-btn" @click="showChangelogModal = true"
+                  title="Änderungsverlauf anzeigen">Version vom {{ versionsDatum }}</button>
+        </p>
       </div>
 
       <div v-if="view === 'list'" class="list-container">
@@ -2054,6 +2057,28 @@
   </transition>
 
   <transition name="fade">
+    <div v-if="showChangelogModal" class="modal-overlay" @click.self="showChangelogModal = false">
+      <div class="modal-content glass-modal changelog-modal">
+        <div class="modal-header">
+          <h3><span class="icon">📝</span> Änderungsverlauf</h3>
+          <button class="close-btn-circle" @click="showChangelogModal = false">×</button>
+        </div>
+        <div class="modal-body changelog-body">
+          <p v-if="changelogEintraege.length === 0" class="changelog-empty">
+            Kein Änderungsverlauf verfügbar.
+          </p>
+          <ul v-else class="changelog-list">
+            <li v-for="c in changelogEintraege" :key="c.hash" class="changelog-item">
+              <span class="changelog-date">{{ c.dateFmt }}</span>
+              <span class="changelog-subject">{{ c.subject }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </transition>
+
+  <transition name="fade">
     <div v-if="showTemplateModal" class="modal-overlay" @click.self="showTemplateModal = false">
       <div class="modal-content glass-modal" role="dialog" aria-modal="true" style="max-width: 460px;">
         <div class="modal-header">
@@ -2666,6 +2691,62 @@ textarea {
   text-align: center;
   font-size: 12px;
   opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+.version-hint:hover {
+  opacity: 0.8;
+}
+.version-hint-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Changelog-Modal */
+.changelog-modal {
+  max-width: 640px;
+  width: 92%;
+}
+.changelog-body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.changelog-empty {
+  opacity: 0.6;
+  text-align: center;
+  padding: 20px 0;
+}
+.changelog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.changelog-item {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 4px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.18);
+}
+.changelog-item:last-child {
+  border-bottom: none;
+}
+.changelog-date {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  opacity: 0.6;
+  min-width: 74px;
+}
+.changelog-subject {
+  flex: 1 1 auto;
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .editor-container {
@@ -4889,6 +4970,8 @@ import iconStundentafel from '@/assets/icons/stundentafel.svg'
 // Wird bei jedem Commit vom pre-commit-Hook (.githooks/pre-commit) auf das
 // aktuelle Datum gestempelt und liefert die "Version vom …"-Anzeige.
 import versionInfo from '@/version.json'
+// Änderungsverlauf (aus der Git-Historie, per post-commit-Hook erzeugt).
+import changelogData from '@/changelog.json'
 
 const getInitialColor = () => {
   const h = Math.floor(Math.random() * 360);
@@ -5098,6 +5181,7 @@ export default {
       selectedTime: '08:00',
       showLehrerPlanModal: false,
       showDienstPlanModal: false,
+      showChangelogModal: false,
       isNewKlasse: false,
       klassen: [], // Hier sollten deine geladenen Klassen rein
       lehrerPlanForm: {
@@ -5145,6 +5229,14 @@ export default {
       const iso = (versionInfo && versionInfo.date) || '';
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
       return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+    },
+    // Änderungsverlauf für das Changelog-Modal (Datum als TT.MM.JJJJ).
+    changelogEintraege() {
+      const list = (changelogData && changelogData.commits) || [];
+      return list.map((c) => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.date || '');
+        return { ...c, dateFmt: m ? `${m[3]}.${m[2]}.${m[1]}` : (c.date || '') };
+      });
     },
     get_soll_klassenverbund() {
       if (this.activeCategory === 'lehrerstundenplan') {

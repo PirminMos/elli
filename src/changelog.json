@@ -1,0 +1,170 @@
+{
+  "generated": "2026-09-02",
+  "commits": [
+    {
+      "hash": "10b4b24",
+      "date": "2026-09-02",
+      "subject": "Feature: Changelog beim Klick auf \"Version vom\" anzeigen"
+    },
+    {
+      "hash": "991a2b2",
+      "date": "2026-09-02",
+      "subject": "Feature: Einsatzort bei Aktivitaeten im Diensteinsatzplan"
+    },
+    {
+      "hash": "6fe5b86",
+      "date": "2026-09-02",
+      "subject": "Aendere Plan-Vorlagen: Adresse, Grossschreibung, feste Daten"
+    },
+    {
+      "hash": "5f4bdb9",
+      "date": "2026-09-02",
+      "subject": "Feature: \"Version vom <Datum>\" auf der Startseite (auto-gestempelt)"
+    },
+    {
+      "hash": "9c8a381",
+      "date": "2026-09-02",
+      "subject": "Fix: Schulfach-Termine aus Lehrerplan an Klassenraster binden"
+    },
+    {
+      "hash": "4bdfa3c",
+      "date": "2026-09-01",
+      "subject": "Fix: Zweitkraft-Regelstundenmaße korrekt laden & speichern"
+    },
+    {
+      "hash": "6ef295a",
+      "date": "2026-09-01",
+      "subject": "Aendere Standard-Zeitraster im Schuelerstundenplan"
+    },
+    {
+      "hash": "8738522",
+      "date": "2026-09-01",
+      "subject": "Feature: Burger-Menue - Zusatzfelder je Schuljahr, 2-spaltig & scrollbar"
+    },
+    {
+      "hash": "a04e2de",
+      "date": "2026-09-01",
+      "subject": "Feature: Burger-Menue-Felder (Nachname/Titel/Genehmiger/Beginn/Ende) je Schuljahr (Backend)"
+    },
+    {
+      "hash": "5ccc9a8",
+      "date": "2026-08-31",
+      "subject": "Entferne Import-Logik (Frontend) + neues Stundentafel-Icon"
+    },
+    {
+      "hash": "e10fd92",
+      "date": "2026-08-31",
+      "subject": "Entferne alte Dokument-Import-Logik (Backend)"
+    },
+    {
+      "hash": "e5a12d2",
+      "date": "2026-08-31",
+      "subject": "Feature: Stundentafel-Vorlagen - Kategorie, Editor, Anwenden (Frontend)"
+    },
+    {
+      "hash": "2df8a80",
+      "date": "2026-08-31",
+      "subject": "Feature: Stundentafel-Vorlagen (Templates) - Backend"
+    },
+    {
+      "hash": "607538e",
+      "date": "2026-08-31",
+      "subject": "UI: Slider auf 25 Einheiten, \"Pflichtstunden\" -> \"Regelstundenmass\""
+    },
+    {
+      "hash": "c57c58b",
+      "date": "2026-08-31",
+      "subject": "Feature: Raum-Ueberbuchung mit Rueckfrage beim Ablegen + Dialog im Glas-Design"
+    },
+    {
+      "hash": "bb199b9",
+      "date": "2026-08-31",
+      "subject": "Feature: Raum-Ueberbuchung erlauben statt hart blockieren (Backend)"
+    },
+    {
+      "hash": "ba670d1",
+      "date": "2026-08-31",
+      "subject": "Aendere Lehrerstundenplan-Export: Stunden einzeln statt zusammengefasst"
+    },
+    {
+      "hash": "00c7b69",
+      "date": "2026-07-19",
+      "subject": "Docs: anfaengerfreundliche Windows-Installationsanleitung"
+    },
+    {
+      "hash": "bd67671",
+      "date": "2026-07-19",
+      "subject": "UI: Aktivitaeten-Maske vereinfachen, Erstkraft-Label, Editor-Layout"
+    },
+    {
+      "hash": "22448ed",
+      "date": "2026-07-19",
+      "subject": "Docs: README mit Projektbeschreibung von elli fuellen"
+    },
+    {
+      "hash": "e1404bb",
+      "date": "2026-07-14",
+      "subject": "Feature: automatische Hintergrund-Backups der Datenbank"
+    },
+    {
+      "hash": "36a9deb",
+      "date": "2026-07-14",
+      "subject": "Chore: .gitattributes erzwingt LF fuer Shell-Skripte und Git-Hook"
+    },
+    {
+      "hash": "3067999",
+      "date": "2026-07-14",
+      "subject": "Feature: Backup-/Restore-Skripte fuer DB-Umzug auf anderen Server"
+    },
+    {
+      "hash": "f2b57ce",
+      "date": "2026-07-14",
+      "subject": "UI: native confirm/alert und Select durch elli-Design ersetzen"
+    },
+    {
+      "hash": "2f77639",
+      "date": "2026-07-14",
+      "subject": "Feature: Basisdaten beim Schuljahrwechsel aus dem Vorjahr uebernehmen"
+    },
+    {
+      "hash": "e9c2824",
+      "date": "2026-07-14",
+      "subject": "Feature: post-merge Git-Hook baut Stack nach jedem git pull automatisch neu"
+    },
+    {
+      "hash": "bebaac2",
+      "date": "2026-07-14",
+      "subject": "Fix: save_zweitkraft robust gegen fehlende Felder (Quick-Add)"
+    },
+    {
+      "hash": "3052e0e",
+      "date": "2026-07-14",
+      "subject": "Fix: Neue Zweitkraft im Aktivitaeten-Editor wird als Zweitkraft gespeichert"
+    },
+    {
+      "hash": "997db6b",
+      "date": "2026-07-14",
+      "subject": "Favicon.ico aus neuem elli-Logo erneuert"
+    },
+    {
+      "hash": "a040e75",
+      "date": "2026-07-14",
+      "subject": "Fix: Neu erstellter Raum im Lehrerplan auswaehlbar"
+    },
+    {
+      "hash": "09c071b",
+      "date": "2026-07-14",
+      "subject": "Feature: Onboarding-Modal erzwingt Schuljahr-Anlage beim ersten Start"
+    },
+    {
+      "hash": "c4b3989",
+      "date": "2026-07-14",
+      "subject": "Fix: Klassen-Stundenplan zeigt Termine aus fremdem Kontext"
+    },
+    {
+      "hash": "62d8766",
+      "date": "2026-07-14",
+      "subject": "Initial commit: elli mit Docker-Setup, Logo und Favicon"
+    }
+  ]
+}
