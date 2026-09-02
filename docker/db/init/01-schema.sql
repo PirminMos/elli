@@ -141,12 +141,13 @@ CREATE TABLE IF NOT EXISTS `lehrer_stundentafel` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `zweitkraft_stundentafel` (
-  `id`            INT(11)                  NOT NULL AUTO_INCREMENT,
-  `zweitkraft_id` INT(11)                  NOT NULL,
-  `aktivitaet_id` INT(11)                  DEFAULT NULL,
-  `einsatzort`    VARCHAR(255)             DEFAULT NULL,
-  `soll_stunden`  DECIMAL(5,2)             NOT NULL,
-  `besetzung_typ` ENUM('einzel','doppel')  DEFAULT 'einzel',
+  `id`                    INT(11)                  NOT NULL AUTO_INCREMENT,
+  `zweitkraft_id`         INT(11)                  NOT NULL,
+  `aktivitaet_id`         INT(11)                  DEFAULT NULL,
+  `einsatzort`            VARCHAR(255)             DEFAULT NULL,
+  `soll_stunden`          DECIMAL(5,2)             NOT NULL,
+  `besetzung_typ`         ENUM('einzel','doppel')  DEFAULT 'einzel',
+  `ermaessigung_relevant` TINYINT(1)               NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`),
   KEY `idx_zktafel_zweitkraft` (`zweitkraft_id`),
   KEY `idx_zktafel_aktivitaet` (`aktivitaet_id`)

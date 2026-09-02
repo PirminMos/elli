@@ -245,6 +245,14 @@ function elli_ensure_schule_columns(PDO $conn) {
         ADD COLUMN IF NOT EXISTS schuljahr_ende DATE DEFAULT NULL");
 }
 
+// Selbstheilung: Spalte fuer "Ermaessigung relevant?" je Einsatzort-Zeile einer
+// Zweitkraft. Standard 1 (angehakt) – so bleiben Alt-Datensaetze unveraendert
+// in die Ermaessigungsverteilung einbezogen.
+function elli_ensure_zweitkraft_stundentafel_columns(PDO $conn) {
+    $conn->exec("ALTER TABLE zweitkraft_stundentafel
+        ADD COLUMN IF NOT EXISTS ermaessigung_relevant TINYINT(1) NOT NULL DEFAULT 1");
+}
+
 if ($action === 'get_schuljahre') {
     try {
         elli_ensure_schule_columns($conn);
@@ -660,10 +668,12 @@ if ($action === 'load_editor_data') {
                 $stmt->execute([':sid' => $sid]);
                 $zweitkraefte = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+                elli_ensure_zweitkraft_stundentafel_columns($conn);
                 foreach ($zweitkraefte as &$zk) {
                     $stmtM = $conn->prepare("
                         SELECT zst.id, zst.aktivitaet_id, a.name AS aktivitaet_name,
-                               zst.einsatzort, zst.soll_stunden, zst.besetzung_typ
+                               zst.einsatzort, zst.soll_stunden, zst.besetzung_typ,
+                               zst.ermaessigung_relevant
                         FROM zweitkraft_stundentafel AS zst
                         LEFT JOIN aktivitaet AS a ON a.id = zst.aktivitaet_id
                         WHERE zst.zweitkraft_id = ?
@@ -1367,17 +1377,19 @@ if ($action === 'save_zweitkraft') {
         }
 
         // 2. STUNDENTAFEL (SOLL-Stunden je Aktivität/Einsatzort) SYNCHRONISIEREN
+        elli_ensure_zweitkraft_stundentafel_columns($conn);
         // Lösche alte Einträge
         $stmtDel = $conn->prepare("DELETE FROM zweitkraft_stundentafel WHERE zweitkraft_id = ?");
         $stmtDel->execute([$id]);
 
         // 'pflichtstunden_masse' bleibt der Feldname aus dem Frontend-Payload;
-        // jede Zeile kann jetzt zusätzlich 'aktivitaet_id' und 'besetzung_typ' mitbringen.
+        // jede Zeile kann jetzt zusätzlich 'aktivitaet_id', 'besetzung_typ' und
+        // 'ermaessigung_relevant' (Haken hinter Einsatzort) mitbringen.
         if (!empty($data['pflichtstunden_masse']) && is_array($data['pflichtstunden_masse'])) {
 
             $stmtIns = $conn->prepare("
-                INSERT INTO zweitkraft_stundentafel (zweitkraft_id, aktivitaet_id, einsatzort, soll_stunden, besetzung_typ)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO zweitkraft_stundentafel (zweitkraft_id, aktivitaet_id, einsatzort, soll_stunden, besetzung_typ, ermaessigung_relevant)
+                VALUES (?, ?, ?, ?, ?, ?)
             ");
 
             foreach ($data['pflichtstunden_masse'] as $mass) {
@@ -1391,7 +1403,9 @@ if ($action === 'save_zweitkraft') {
                         !empty($mass['aktivitaet_id']) ? (int)$mass['aktivitaet_id'] : null,
                         $mass['einsatzort'] ?? null,
                         str_replace(',', '.', (string)$sollStunden),
-                        $mass['besetzung_typ'] ?? 'einzel'
+                        $mass['besetzung_typ'] ?? 'einzel',
+                        // Fehlt der Schluessel (Alt-Client), gilt Standard "angehakt".
+                        (int)($mass['ermaessigung_relevant'] ?? true)
                     ]);
                 }
             }

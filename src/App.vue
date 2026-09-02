@@ -559,9 +559,7 @@
                     <label>Planbare Stunden:</label>
                     <div
                         :style="{height: '51px', display: 'flex', alignItems: 'center'}">
-                      <span>{{
-                          mass.stunden - (currentZweitkraft.ermaessigung / currentZweitkraft.pflichtstunden_masse.length).toFixed(2)
-                        }}</span>
+                      <span>{{ planbareStunden(mass) }}</span>
                     </div>
                   </div>
                 </div>
@@ -575,6 +573,11 @@
                         placeholder="z.B. IB Schule, HPT"
                         class="glass-input"
                     >
+                    <label class="ermaessigung-toggle"
+                           title="Ermäßigung gleichmäßig auf die angehakten Einsatzorte verteilen">
+                      <input type="checkbox" v-model="mass.ermaessigung_relevant">
+                      <span>Ermäßigung relevant</span>
+                    </label>
                   </div>
                   <div>
                     <label class="invisible">.</label>
@@ -2747,6 +2750,24 @@ textarea {
   flex: 1 1 auto;
   font-size: 14px;
   line-height: 1.35;
+}
+
+/* "Ermäßigung relevant"-Haken hinter dem Einsatzort (Zweitkraft-Editor) */
+.ermaessigung-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+  cursor: pointer;
+  user-select: none;
+}
+.ermaessigung-toggle input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #2ed573;
 }
 
 .editor-container {
@@ -5111,7 +5132,7 @@ export default {
         einsatzort: '',
         farbe: getInitialColor(),
         textfarbe: '#ffffff',
-        pflichtstunden_masse: [{einsatzort: 'IB Schule', stunden: 20}],
+        pflichtstunden_masse: [{einsatzort: 'IB Schule', stunden: 20, ermaessigung_relevant: true}],
         ermaessigung: 0,
         upz: 20,
         grund_ermaessigung: '',
@@ -5580,7 +5601,7 @@ export default {
           einsatzort: '',
           farbe: getInitialColor(),       // Ein anderes Orange zur Unterscheidung
           textfarbe: '#ffffff',
-          pflichtstunden_masse: [{einsatzort: 'IB Schule', stunden: 20}],   // Beispielhafter Standardwert
+          pflichtstunden_masse: [{einsatzort: 'IB Schule', stunden: 20, ermaessigung_relevant: true}],   // Beispielhafter Standardwert
           ermaessigung: 0,
           upz: 20,
           grund_ermaessigung: '',
@@ -5732,8 +5753,22 @@ export default {
       // Danach ganz normal pushen
       this.currentZweitkraft.pflichtstunden_masse.push({
         einsatzort: '',
-        stunden: 0
+        stunden: 0,
+        ermaessigung_relevant: true   // Standard: angehakt
       });
+    },
+    // Planbare Stunden eines Einsatzorts = Regelstundenmaß minus dessen Anteil an
+    // der Ermäßigung. Die Ermäßigung verteilt sich gleichmäßig auf die Einsatzorte,
+    // die als "Ermäßigung relevant" angehakt sind. Nicht angehakte Orte behalten
+    // ihr volles Regelstundenmaß.
+    planbareStunden(mass) {
+      const stunden = parseFloat(mass.stunden) || 0;
+      if (!mass.ermaessigung_relevant) return stunden.toFixed(2);
+      const relevante = (this.currentZweitkraft.pflichtstunden_masse || [])
+          .filter(m => m.ermaessigung_relevant).length;
+      const ermaessigung = parseFloat(this.currentZweitkraft.ermaessigung) || 0;
+      const anteil = relevante > 0 ? ermaessigung / relevante : 0;
+      return (stunden - anteil).toFixed(2);
     },
     addVerfuegbarkeit() {
       if (!this.editingRaum.verfuegbarkeiten) {
@@ -5955,7 +5990,11 @@ export default {
               ...item,
               pflichtstunden_masse: (item.pflichtstunden_masse || []).map(m => ({
                 ...m,
-                stunden: Number(m.stunden ?? m.soll_stunden ?? 0)
+                stunden: Number(m.stunden ?? m.soll_stunden ?? 0),
+                // DB liefert 0/1; fehlt der Wert (Alt-Datensatz) -> standardmäßig angehakt.
+                ermaessigung_relevant: m.ermaessigung_relevant === undefined
+                    ? true
+                    : !!Number(m.ermaessigung_relevant)
               }))
             };
           } else if (this.activeCategory === 'raum') {

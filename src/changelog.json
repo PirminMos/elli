@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "10b4b24",
+      "hash": "95b87c6",
+      "date": "2026-09-02",
+      "subject": "Feature: Haken \"Ermaessigung relevant\" je Einsatzort (Zweitkraft)"
+    },
+    {
+      "hash": "7995596",
       "date": "2026-09-02",
       "subject": "Feature: Changelog beim Klick auf \"Version vom\" anzeigen"
     },
