@@ -123,6 +123,8 @@
             <span class="btn-text">{{ categoryMap['stundentafel'].plural }}</span>
           </button>
         </div>
+
+        <p v-if="versionsDatum" class="version-hint">Version vom {{ versionsDatum }}</p>
       </div>
 
       <div v-if="view === 'list'" class="list-container">
@@ -2635,6 +2637,14 @@ textarea {
   justify-content: center;
 }
 
+/* Kleiner, unauffälliger Versionshinweis am Fuß der Startseite */
+.version-hint {
+  margin: 48px 0 16px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.45;
+}
+
 .editor-container {
   width: 80%;
   margin: 40px auto;
@@ -4853,6 +4863,9 @@ import iconLehrerstundenplan from '@/assets/icons/lehrerstundenplan.svg'
 import iconRaumbelegungsplan from '@/assets/icons/raumbelegungsplan.svg'
 import iconSchuelerstundenplan from '@/assets/icons/schuelerstundenplan.svg'
 import iconStundentafel from '@/assets/icons/stundentafel.svg'
+// Wird bei jedem Commit vom pre-commit-Hook (.githooks/pre-commit) auf das
+// aktuelle Datum gestempelt und liefert die "Version vom …"-Anzeige.
+import versionInfo from '@/version.json'
 
 const getInitialColor = () => {
   const h = Math.floor(Math.random() * 360);
@@ -5103,6 +5116,13 @@ export default {
     }
   },
   computed: {
+    // "Version vom …" – Datum der letzten Aenderung (aus src/version.json,
+    // bei jedem Commit automatisch aktualisiert). Ausgabe als TT.MM.JJJJ.
+    versionsDatum() {
+      const iso = (versionInfo && versionInfo.date) || '';
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+      return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+    },
     get_soll_klassenverbund() {
       if (this.activeCategory === 'lehrerstundenplan') {
         this.newTafelEntry.soll_klassenverbund = (this.einheiten_kv * 45 / 60);

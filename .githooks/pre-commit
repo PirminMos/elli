@@ -1,0 +1,21 @@
+#!/bin/sh
+# Stempelt bei JEDEM Commit das aktuelle Datum in src/version.json.
+# Da vor jedem Push zwangsläufig ein Commit steht, trägt der gepushte
+# Stand stets das aktuelle "Datum der letzten Änderung", das die
+# Startseite als "Version vom …" anzeigt.
+#
+# Aktivierung (einmalig pro Clone):
+#   git config core.hooksPath .githooks
+#
+# Deaktivieren:
+#   git config --unset core.hooksPath
+
+cd "$(git rev-parse --show-toplevel)" || exit 0
+
+VERSION_FILE="src/version.json"
+TODAY="$(date +%Y-%m-%d)"
+
+printf '{\n  "date": "%s"\n}\n' "$TODAY" > "$VERSION_FILE"
+git add "$VERSION_FILE"
+
+exit 0
