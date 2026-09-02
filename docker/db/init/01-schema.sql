@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS `aktivitaet` (
   `typ`          VARCHAR(100) DEFAULT NULL,
   `name`         VARCHAR(255) DEFAULT NULL,
   `einsatzort`   VARCHAR(255) DEFAULT NULL,
+  -- Gehoert die Aktivitaet zu einer Erstkraft (Lehrerstundenplan, ohne
+  -- Einsatzort) oder zu einer Zweitkraft (Diensteinsatzplan, mit Einsatzort)?
+  `kraft_typ`    VARCHAR(10)  NOT NULL DEFAULT 'zweit',
   PRIMARY KEY (`id`),
   KEY `idx_aktivitaet_schuljahr` (`schuljahr_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

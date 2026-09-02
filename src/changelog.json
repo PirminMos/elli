@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "1dd4438",
+      "hash": "38cf385",
+      "date": "2026-09-02",
+      "subject": "Feature: Aktivitaeten nach Erst- und Zweitkraft trennen"
+    },
+    {
+      "hash": "5d7f6c0",
       "date": "2026-09-02",
       "subject": "Fix: Update-Pruefung sieht auch veraltete laufende Version"
     },

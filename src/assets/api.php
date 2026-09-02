@@ -273,6 +273,40 @@ function elli_ensure_dezimal_stunden(PDO $conn) {
     }
 }
 
+// Selbstheilung: Aktivitaeten gehoeren entweder zu einer Erstkraft
+// (Lehrerstundenplan, ohne Einsatzort) oder zu einer Zweitkraft
+// (Diensteinsatzplan, mit Einsatzort).
+//
+// Beim erstmaligen Anlegen der Spalte werden die vorhandenen Aktivitaeten
+// nach ihrer tatsaechlichen Verwendung zugeordnet: alles, was in einem Termin
+// oder einer Stundentafel einer Erstkraft auftaucht, wird 'erst', der Rest
+// behaelt den Standard 'zweit'. Das laeuft genau einmal - danach entscheidet
+// der Nutzer selbst (Umschalter im Editor).
+function elli_ensure_aktivitaet_kraft_typ(PDO $conn) {
+    $vorhanden = $conn->query("
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'aktivitaet' AND COLUMN_NAME = 'kraft_typ'
+    ")->fetchColumn();
+
+    if ((int)$vorhanden > 0) return;
+
+    $conn->exec("ALTER TABLE aktivitaet
+        ADD COLUMN kraft_typ VARCHAR(10) NOT NULL DEFAULT 'zweit'");
+
+    $conn->exec("
+        UPDATE aktivitaet a SET a.kraft_typ = 'erst'
+        WHERE EXISTS (
+                SELECT 1 FROM termin t
+                JOIN termin_verantwortliche tv ON tv.termin_id = t.id
+                WHERE t.aktivitaet_id = a.id AND tv.kraft_typ = 'erst'
+              )
+           OR EXISTS (
+                SELECT 1 FROM lehrer_stundentafel ls WHERE ls.aktivitaet_id = a.id
+              )
+    ");
+}
+
 // Selbstheilung: Zweit-/Drittberuf und Geschlechts-Flag der Zweitkraft.
 // typ2/typ3 halten die kanonische (weibliche) Berufsbezeichnung; maennlich
 // steuert nur die Anzeige (Opt-In auf die maennliche Form).
@@ -413,8 +447,8 @@ if ($action === 'copy_schuljahr_data') {
 
         // 3. Aktivitaeten
         $conn->prepare("
-            INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort)
-            SELECT ?, typ, name, einsatzort FROM aktivitaet WHERE schuljahr_id = ?
+            INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort, kraft_typ)
+            SELECT ?, typ, name, einsatzort, kraft_typ FROM aktivitaet WHERE schuljahr_id = ?
         ")->execute([$dst, $src]);
 
         // 4. Klassen (mit Map fuer Zeitraster)
@@ -770,6 +804,7 @@ if ($action === 'load_editor_data') {
                 unset($raum); // Referenz sicherheitshalber löschen
                 $res['raeume'] = $raeume;
 
+        elli_ensure_aktivitaet_kraft_typ($conn);
         $stmt = $conn->prepare("SELECT * FROM aktivitaet WHERE schuljahr_id = :sid ORDER BY name ASC");
         $stmt->execute([':sid' => $sid]);
         $res['aktivitaeten'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -822,7 +857,8 @@ if ($action === 'load_activities') {
     $sid = $_GET['schuljahr_id'] ?? null;
 
     // 1. Alle Aktivitäten des Schuljahres holen
-    $stmt = $conn->prepare("SELECT id, name, typ FROM aktivitaet WHERE schuljahr_id = :sid");
+    elli_ensure_aktivitaet_kraft_typ($conn);
+    $stmt = $conn->prepare("SELECT id, name, typ, einsatzort, kraft_typ FROM aktivitaet WHERE schuljahr_id = :sid");
     $stmt->execute([':sid' => $sid]);
     $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -877,6 +913,7 @@ if ($action === 'get_activity_details') {
 
     try {
         // 1. Aktivität holen
+        elli_ensure_aktivitaet_kraft_typ($conn);
         $stmt = $conn->prepare("SELECT * FROM aktivitaet WHERE id = ?");
         $stmt->execute([$id]);
         $activity = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1117,9 +1154,15 @@ if ($action === 'save_activity') {
 
     $sid = $data['schuljahr_id'] ?? null;
     $aktId = $data['id'] ?? null;
-    $einsatzort = $data['einsatzort'] ?? null;
+    // Erstkraft-Aktivitaeten kennen keinen Einsatzort - der haengt am
+    // Diensteinsatz der Zweitkraefte.
+    $kraftTyp = ($data['kraft_typ'] ?? 'zweit') === 'erst' ? 'erst' : 'zweit';
+    $einsatzort = $kraftTyp === 'erst' ? null : ($data['einsatzort'] ?? null);
 
     try {
+        // DDL vor der Transaktion: ALTER TABLE loest in MariaDB einen
+        // impliziten Commit aus (siehe save_zweitkraft).
+        elli_ensure_aktivitaet_kraft_typ($conn);
         $conn->beginTransaction();
         $konflikte = [];
 
@@ -1241,16 +1284,16 @@ if ($action === 'save_activity') {
 
         // --- 2. SPEICHERN ---
         if ($aktId) {
-            $conn->prepare("UPDATE aktivitaet SET typ = ?, name = ?, einsatzort = ? WHERE id = ?")
-                             ->execute([$data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort, $aktId]);
+            $conn->prepare("UPDATE aktivitaet SET typ = ?, name = ?, einsatzort = ?, kraft_typ = ? WHERE id = ?")
+                             ->execute([$data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort, $kraftTyp, $aktId]);
             // Clean Slate
             $conn->prepare("DELETE FROM termin_raeume WHERE termin_id IN (SELECT id FROM termin WHERE aktivitaet_id = ?)")->execute([$aktId]);
             $conn->prepare("DELETE FROM termin_verantwortliche WHERE termin_id IN (SELECT id FROM termin WHERE aktivitaet_id = ?)")->execute([$aktId]);
             $conn->prepare("DELETE FROM termin WHERE aktivitaet_id = ?")->execute([$aktId]);
             $aktivitaetId = $aktId;
         } else {
-            $stmtAct = $conn->prepare("INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort) VALUES (?, ?, ?, ?)");
-            $stmtAct->execute([$sid, $data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort]);
+            $stmtAct = $conn->prepare("INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort, kraft_typ) VALUES (?, ?, ?, ?, ?)");
+            $stmtAct->execute([$sid, $data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort, $kraftTyp]);
             $aktivitaetId = $conn->lastInsertId();
         }
 

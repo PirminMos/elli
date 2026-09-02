@@ -94,7 +94,7 @@
 
         <div class="grid-layout top-grid">
           <button
-              v-for="key in ['aktivitaet', 'erstkraft', 'raum', 'schulfach', 'zweitkraft']"
+              v-for="key in ['aktivitaet-erst', 'aktivitaet-zweit', 'erstkraft', 'raum', 'schulfach', 'zweitkraft']"
               :key="key"
               class="glass-btn btn-accent"
               @click="navigate(key)"
@@ -157,7 +157,7 @@
           >
             <span class="button-content-wrapper">
               <span class="item-name">{{ item.name }}</span>
-              <small v-if="activeCategory === 'aktivitaet'" class="item-type">
+              <small v-if="istAktivitaetsKategorie" class="item-type">
                 {{ item.typ }}
               </small>
             </span>
@@ -243,9 +243,14 @@
         </div>
       </div>
 
-      <div v-if="view === 'editor' && activeCategory === 'aktivitaet'" class="editor-container glass">
+      <div v-if="view === 'editor' && istAktivitaetsKategorie" class="editor-container glass">
         <div class="hero-section small">
           <h1 class="main-title">{{ currentActivity.id ? 'Aktivität bearbeiten' : 'Neue Aktivität' }}</h1>
+          <p class="kraft-typ-hinweis">
+            {{ currentActivity.kraft_typ === 'erst'
+                ? 'Erstkraft – erscheint im Lehrerstundenplan'
+                : 'Zweitkraft – erscheint im Diensteinsatzplan' }}
+          </p>
         </div>
 
         <div class="editor-grid-aktivitaet">
@@ -254,7 +259,21 @@
             <input v-model="currentActivity.name" type="text" placeholder="z.B. Elternsprechstunde">
           </div>
 
+          <!-- Zuordnung nachträglich änderbar: der Einsatzort blendet sich
+               passend ein und aus, die Aktivität wechselt die Liste. -->
           <div class="input-group">
+            <label>Gehört zu:</label>
+            <div class="kraft-typ-schalter">
+              <button type="button" class="kraft-typ-option"
+                      :class="{ aktiv: currentActivity.kraft_typ === 'erst' }"
+                      @click="setzeAktivitaetsKraftTyp('erst')">Erstkraft</button>
+              <button type="button" class="kraft-typ-option"
+                      :class="{ aktiv: currentActivity.kraft_typ !== 'erst' }"
+                      @click="setzeAktivitaetsKraftTyp('zweit')">Zweitkraft</button>
+            </div>
+          </div>
+
+          <div v-if="currentActivity.kraft_typ !== 'erst'" class="input-group">
             <label>Einsatzort:</label>
             <div class="custom-select-wrapper">
               <div class="custom-select-trigger" @click.stop="toggleDropdown('aktivitaet-einsatzort')">
@@ -1076,7 +1095,7 @@
                      :style="{ backgroundColor: fach.farbe}">
                   {{ fach.name }}
                 </div>
-                <div v-for="a in aktivitaetenMitFarbe"
+                <div v-for="a in aktivitaetenErstMitFarbe"
                      :key="a.id"
                      class="draggable-subject-activity"
                      :class="{ 'is-dragging': draggingId === a.id }"
@@ -1242,7 +1261,7 @@
           <div class="bottom-box">
             <div class="toolbox-bottom glass">
               <div class="subject-scroll-container">
-                <div v-for="a in aktivitaetenMitFarbe"
+                <div v-for="a in aktivitaetenZweitMitFarbe"
                      :key="a.id"
                      class="draggable-subject-activity"
                      :class="{ 'is-dragging': draggingId === a.id }"
@@ -1541,7 +1560,7 @@
                     <div class="staff-name">{{ fach.name }}</div>
                   </div>
                   <template v-if="activeCategory === 'lehrerstundenplan'">
-                    <div v-for="a in aktivitaeten"
+                    <div v-for="a in aktivitaetenErst"
                          :key="'a-' + a.id"
                          class="staff-box glass-card"
                          :class="{ 'active-selection': selectedUniqueKey === 'a-' + a.id }"
@@ -1850,7 +1869,7 @@
                 </div>
                 <div class="staff-name">{{ fach.name }}</div>
               </div>
-              <div v-for="a in aktivitaeten" :key="'a-'+a.id"
+              <div v-for="a in aktivitaetenErst" :key="'a-'+a.id"
                    class="staff-box glass-card"
                    :class="{ 'active-selection': selectedUniqueKey === 'a-' + a.id }"
                    @click="selectLehrerFach(a, 'a')">
@@ -1961,7 +1980,7 @@
               📍 Einsatzort: {{ lehrerPlanForm.einsatzort }}
             </div>
             <div class="staff-grid-container stundentafel-grid">
-              <div v-for="a in aktivitaeten" :key="'a-'+a.id"
+              <div v-for="a in aktivitaetenZweit" :key="'a-'+a.id"
                    class="staff-box glass-card"
                    :class="{ 'active-selection': selectedUniqueKey === 'a-' + a.id }"
                    @click="selectLehrerFach(a, 'a')">
@@ -2007,7 +2026,8 @@
     <div v-if="showNewAktivitaetModal" class="modal-overlay" @click.self="showNewAktivitaetModal = false">
       <div class="modal-content glass-modal">
         <div class="modal-header">
-          <h3><span class="icon">📚</span> Neue Aktivität</h3>
+          <h3><span class="icon">📚</span> Neue Aktivität
+            ({{ editingAktivitaet.kraft_typ === 'erst' ? 'Erstkraft' : 'Zweitkraft' }})</h3>
           <button class="close-btn-circle" @click="showNewAktivitaetModal=false">×</button>
         </div>
 
@@ -2018,7 +2038,7 @@
                    @keyup.enter="saveActivity">
           </div>
 
-          <div class="input-floating-group">
+          <div v-if="editingAktivitaet.kraft_typ !== 'erst'" class="input-floating-group">
             <label>Einsatzort:</label>
             <div class="custom-select-wrapper">
               <div class="custom-select-trigger" @click.stop="toggleDropdown('neue-aktivitaet-einsatzort')">
@@ -2843,6 +2863,37 @@ textarea {
   flex: 1 1 auto;
   font-size: 14px;
   line-height: 1.35;
+}
+
+/* Aktivitäten: Zuordnung Erstkraft/Zweitkraft */
+.kraft-typ-hinweis {
+  margin: 4px 0 0;
+  font-size: 13px;
+  opacity: 0.6;
+  text-align: center;
+}
+.kraft-typ-schalter {
+  display: flex;
+  gap: 8px;
+}
+.kraft-typ-option {
+  flex: 1;
+  padding: 12px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.kraft-typ-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.kraft-typ-option.aktiv {
+  background: rgba(55, 196, 106, 0.25);
+  border-color: rgba(55, 196, 106, 0.7);
+  font-weight: 600;
 }
 
 /* Update-Symbol neben dem Versionshinweis */
@@ -5278,8 +5329,16 @@ export default {
       saveTimeout: null, // Für das Debouncing der Adresse,
       isInitialLoading: false,
       categoryMap: {
-        'aktivitaet': {
-          plural: 'Aktivitäten',
+        // Aktivitaeten sind zweigeteilt: die einen gehoeren in den
+        // Lehrerstundenplan (Erstkraft, ohne Einsatzort), die anderen in den
+        // Diensteinsatzplan (Zweitkraft, mit Einsatzort). Gleiche Bearbeitungs-
+        // ansicht, getrennte Listen.
+        'aktivitaet-erst': {
+          plural: 'Aktivitäten – Erstkraft',
+          icon: iconAktivitaet
+        },
+        'aktivitaet-zweit': {
+          plural: 'Aktivitäten – Zweitkraft',
           icon: iconAktivitaet
         },
         'erstkraft': {
@@ -5577,8 +5636,26 @@ export default {
           this.editingRaum.name.trim().length > 0
       );
     },
+    // Beide Aktivitaets-Kategorien teilen sich Liste und Editor; nur der
+    // Kraft-Typ unterscheidet sie.
+    istAktivitaetsKategorie() {
+      return this.activeCategory === 'aktivitaet-erst' || this.activeCategory === 'aktivitaet-zweit';
+    },
+    aktivitaetsKraftTyp() {
+      return this.activeCategory === 'aktivitaet-erst' ? 'erst' : 'zweit';
+    },
+    // Aktivitaeten der Erstkraefte (Lehrerstundenplan, ohne Einsatzort).
+    // Alt-Datensaetze ohne Kennzeichen zaehlen als Zweitkraft-Aktivitaet.
+    aktivitaetenErst() {
+      return (this.aktivitaeten || []).filter(a => a.kraft_typ === 'erst');
+    },
+    // Aktivitaeten der Zweitkraefte (Diensteinsatzplan, mit Einsatzort).
+    aktivitaetenZweit() {
+      return (this.aktivitaeten || []).filter(a => a.kraft_typ !== 'erst');
+    },
     currentItems() {
-      if (this.activeCategory === 'aktivitaet') return this.aktivitaeten;
+      if (this.activeCategory === 'aktivitaet-erst') return this.aktivitaetenErst;
+      if (this.activeCategory === 'aktivitaet-zweit') return this.aktivitaetenZweit;
       if (this.activeCategory === 'raum') return this.raeume;
       if (this.activeCategory === 'erstkraft') return this.erstkraefte;
       if (this.activeCategory === 'zweitkraft') return this.zweitkraefte;
@@ -5750,6 +5827,14 @@ export default {
 
       return plan ? (plan.name || plan.klasse_name) : 'Unbekannte Klasse';
     },
+    // Werkzeugleiste im Lehrerstundenplan: nur Erstkraft-Aktivitaeten
+    aktivitaetenErstMitFarbe() {
+      return this.aktivitaetenErst.map(a => ({...a, farbe: this.getFachFarbe(a.name) || this.getRandomPastelColor(a.name)}));
+    },
+    // Werkzeugleiste im Diensteinsatzplan: nur Zweitkraft-Aktivitaeten
+    aktivitaetenZweitMitFarbe() {
+      return this.aktivitaetenZweit.map(a => ({...a, farbe: this.getFachFarbe(a.name) || this.getRandomPastelColor(a.name)}));
+    },
     aktivitaetenMitFarbe() {
       if (!this.aktivitaeten) return [];
 
@@ -5843,11 +5928,12 @@ export default {
         this.view = 'editor';
         return;
       }
-      if (this.activeCategory === 'aktivitaet') {
+      if (this.istAktivitaetsKategorie) {
         this.currentActivity = {
           id: null,
           name: '',
           einsatzort: '',
+          kraft_typ: this.aktivitaetsKraftTyp,
           verantwortliche: [], // Wichtig: Als Array initialisieren
           raeume: [],          // Wichtig: Als Array initialisieren
           termine: []          // Wichtig: Als leeres Array initialisieren
@@ -6261,8 +6347,10 @@ export default {
       if (!await this.elliConfirm(`Möchten Sie "${item.name}" wirklich löschen?`, 'Löschen bestätigen')) return;
 
       try {
-        // Wir hängen den Typ aus activeCategory an
-        const url = `${API_URL}?action=delete_element&id=${item.id}&type=${this.activeCategory}`;
+        // Wir hängen den Typ aus activeCategory an. Beide Aktivitäts-
+        // Kategorien liegen in derselben Tabelle.
+        const typ = this.istAktivitaetsKategorie ? 'aktivitaet' : this.activeCategory;
+        const url = `${API_URL}?action=delete_element&id=${item.id}&type=${typ}`;
         const res = await fetch(url);
 
         // Falls die API doch mal Text sendet, fangen wir das hier ab:
@@ -6389,8 +6477,8 @@ export default {
           return; // WICHTIG: Hier stoppen, damit kein API-Call für Aktivitäten erfolgt
         }
 
-        // 2. Komplexe Kategorie: 'aktivitaet' (benötigt Details vom Server)
-        if (this.activeCategory === 'aktivitaet') {
+        // 2. Komplexe Kategorie: Aktivitäten (benötigen Details vom Server)
+        if (this.istAktivitaetsKategorie) {
           const response = await fetch(`${API_URL}?action=get_activity_details&id=${item.id}`);
           const result = await response.json();
 
@@ -6406,6 +6494,8 @@ export default {
             id: details.id,
             name: details.name || '',
             typ: details.typ || 'AG',
+            // Alt-Datensaetze ohne Kennzeichen gelten als Zweitkraft-Aktivitaet
+            kraft_typ: details.kraft_typ === 'erst' ? 'erst' : 'zweit',
             einsatzort: details.einsatzort || '',
             schuljahr_id: details.schuljahr_id,
             // Termine sauber mappen
@@ -6644,6 +6734,13 @@ export default {
         await this.updaterAnfrage('/quittieren', {method: 'POST'});
       } catch (e) { /* nicht schlimm */ }
       window.location.reload();
+    },
+    // Zuordnung einer Aktivität wechseln. Erstkraft-Aktivitäten haben keinen
+    // Einsatzort – beim Wechsel wird er deshalb geleert.
+    setzeAktivitaetsKraftTyp(typ) {
+      this.currentActivity.kraft_typ = typ === 'erst' ? 'erst' : 'zweit';
+      if (this.currentActivity.kraft_typ === 'erst') this.currentActivity.einsatzort = '';
+      this.activeDropdown = null;
     },
     // ISO-Datum (JJJJ-MM-TT) als TT.MM.JJJJ ausgeben.
     formatiereDatum(iso) {
@@ -8453,9 +8550,12 @@ export default {
       } else if (type === 'aktivitaet') {
         // Beim Anlegen werden nur die Stammdaten erfasst. Konkrete Termine
         // (Tag/Zeit/Raum) werden spaeter per Drag & Drop im Wochenplan gesetzt.
+        // Im Lehrerstundenplan angelegte Aktivitaeten gehoeren der Erstkraft,
+        // im Diensteinsatzplan der Zweitkraft.
         this.editingAktivitaet = {
           name: '',
           einsatzort: '',
+          kraft_typ: this.activeCategory === 'lehrerstundenplan' ? 'erst' : 'zweit',
           termine: []
         };
         // Einsatzort-Auswahl im Modal befüllen (Orte der Zweitkräfte)
@@ -8888,7 +8988,7 @@ export default {
     },
     // Setzt den Tag für den richtigen Termin und schließt das Dropdown
     selectTagForTermin(index, tag) {
-      if (this.activeCategory === 'aktivitaet') {
+      if (this.istAktivitaetsKategorie) {
         this.currentActivity.termine[index].tag = tag;
         console.log(`Termin ${index} auf ${tag} gesetzt:`, this.currentActivity.termine[index]);
       } else {
@@ -9304,7 +9404,7 @@ export default {
             this.lehrerMitTerminen(this.activeLehrer.id);
           }
 
-          if (this.activeCategory === 'aktivitaet') {
+          if (this.istAktivitaetsKategorie) {
             this.view = 'home';
           } else {
             this.showNewAktivitaetModal = false;
