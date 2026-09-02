@@ -502,27 +502,12 @@
           </div>
 
           <div class="input-group">
-            <label>Beruf / Funktion:</label>
-            <div class="custom-select-wrapper">
-              <div class="custom-select-trigger" @click.stop="toggleDropdown('zweitkraft_typ')">
-                <span>{{ currentZweitkraft.typ || 'Beruf wählen...' }}</span>
-                <span class="arrow-down" :class="{ 'rotate': activeDropdown === 'zweitkraft_typ' }">▼</span>
-              </div>
-
-              <transition name="fade">
-                <div v-if="activeDropdown === 'zweitkraft_typ'" class="custom-options glass">
-                  <div
-                      v-for="t in ['Kinderpfleger:in','Erzieher:in','Praktikant:in','Individualbegleitung']"
-                      :key="t"
-                      class="custom-option"
-                      :class="{ selected: currentZweitkraft.typ === t }"
-                      @click.stop="selectType(t)"
-                  >
-                    {{ t }}
-                  </div>
-                </div>
-              </transition>
-            </div>
+            <label>Geschlecht:</label>
+            <label class="maennlich-toggle"
+                   title="Berufsbezeichnungen in männlicher Form anzeigen (Opt-in)">
+              <input type="checkbox" v-model="currentZweitkraft.maennlich">
+              <span>Männlich (männliche Berufsbezeichnung)</span>
+            </label>
           </div>
 
           <div class="input-row-dual">
@@ -540,56 +525,87 @@
             </div>
           </div>
 
-          <div class="input-group full-width">
-            <label>Regelstundenmaße</label>
-            <div v-for="(mass, index) in currentZweitkraft.pflichtstunden_masse" :key="index"
-                 class="mass-row-item glass-input">
-              <div class="input-row-triple">
-                <div class="input-row-dual fifty-percent">
-                  <div class="input-group">
-                    <label>Regelstundenmaß:</label>
-                    <div class="custom-number-input">
-                      <button @click="mass.stunden--">-</button>
-                      <input v-model="mass.stunden" type="number" step="1" min="0">
-                      <button @click="mass.stunden++">+</button>
-                    </div>
-                  </div>
+          <div class="input-group full-width berufe-section">
+            <label>Berufe &amp; Einsatzorte</label>
 
-                  <div class="input-group">
-                    <label>Planbare Stunden:</label>
-                    <div
-                        :style="{height: '51px', display: 'flex', alignItems: 'center'}">
-                      <span>{{ planbareStunden(mass) }}</span>
+            <div class="beruf-block glass-input"
+                 v-for="(beruf, bIdx) in currentZweitkraft.berufe" :key="'beruf-block-' + bIdx">
+              <div class="beruf-block-head">
+                <div class="input-group beruf-select-group">
+                  <label>{{ ['Beruf / Funktion:', 'Zweitberuf:', 'Drittberuf:'][bIdx] }}</label>
+                  <div class="custom-select-wrapper">
+                    <div class="custom-select-trigger" @click.stop="toggleDropdown('beruf-' + bIdx)">
+                      <span>{{ berufLabel(beruf) || 'Beruf wählen...' }}</span>
+                      <span class="arrow-down" :class="{ 'rotate': isDropdownOpen('beruf-' + bIdx) }">▼</span>
                     </div>
+                    <transition name="fade">
+                      <div v-if="isDropdownOpen('beruf-' + bIdx)" class="custom-options glass">
+                        <div v-for="opt in berufeOptionen" :key="opt"
+                             class="custom-option" :class="{ selected: beruf === opt }"
+                             @click.stop="selectBeruf(bIdx, opt)">
+                          {{ berufLabel(opt) }}
+                        </div>
+                      </div>
+                    </transition>
                   </div>
                 </div>
+                <button v-if="bIdx > 0" class="remove-btn beruf-remove"
+                        @click="removeBeruf(bIdx)" title="Diesen Beruf entfernen">×</button>
+              </div>
 
-                <div class="input-row-dual fifty-percent">
-                  <div class="input-group">
-                    <label>Einsatzort:</label>
-                    <input
-                        v-model="mass.einsatzort"
-                        type="text"
-                        placeholder="z.B. IB Schule, HPT"
-                        class="glass-input"
-                    >
-                    <label class="ermaessigung-toggle"
-                           title="Ermäßigung gleichmäßig auf die angehakten Einsatzorte verteilen">
-                      <input type="checkbox" v-model="mass.ermaessigung_relevant">
-                      <span>Ermäßigung relevant</span>
-                    </label>
+              <label class="beruf-sublabel">Regelstundenmaße</label>
+              <div v-for="mass in rowsForBeruf(bIdx + 1)" :key="mass._uid"
+                   class="mass-row-item glass-input">
+                <div class="input-row-triple">
+                  <div class="input-row-dual fifty-percent">
+                    <div class="input-group">
+                      <label>Regelstundenmaß:</label>
+                      <div class="custom-number-input">
+                        <button @click="mass.stunden--">-</button>
+                        <input v-model="mass.stunden" type="number" step="1" min="0">
+                        <button @click="mass.stunden++">+</button>
+                      </div>
+                    </div>
+
+                    <div class="input-group">
+                      <label>Planbare Stunden:</label>
+                      <div :style="{height: '51px', display: 'flex', alignItems: 'center'}">
+                        <span>{{ planbareStunden(mass) }}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label class="invisible">.</label>
-                    <button class="remove-btn" @click="currentZweitkraft.pflichtstunden_masse.splice(index, 1)">×
-                    </button>
+
+                  <div class="input-row-dual fifty-percent">
+                    <div class="input-group">
+                      <label>Einsatzort:</label>
+                      <input
+                          v-model="mass.einsatzort"
+                          type="text"
+                          placeholder="z.B. IB Schule, HPT"
+                          class="glass-input"
+                      >
+                      <label class="ermaessigung-toggle"
+                             title="Ermäßigung gleichmäßig auf die angehakten Einsatzorte verteilen">
+                        <input type="checkbox" v-model="mass.ermaessigung_relevant">
+                        <span>Ermäßigung relevant</span>
+                      </label>
+                    </div>
+                    <div>
+                      <label class="invisible">.</label>
+                      <button class="remove-btn" @click="removeMass(mass)">×</button>
+                    </div>
                   </div>
                 </div>
               </div>
+
+              <button class="glass-btn btn-add-inline" @click="addPflichtstundenMass(bIdx + 1)">
+                <span class="icon">+</span> Regelstundenmaß hinzufügen
+              </button>
             </div>
 
-            <button class="glass-btn btn-add-inline" @click="addPflichtstundenMass">
-              <span class="icon">+</span> Regelstundenmaß hinzufügen
+            <button v-if="currentZweitkraft.berufe.length < 3"
+                    class="glass-btn btn-add-inline add-beruf-btn" @click="addBeruf">
+              <span class="icon">+</span> Weiteren Beruf hinzufügen
             </button>
           </div>
 
@@ -2752,9 +2768,13 @@ textarea {
   line-height: 1.35;
 }
 
-/* "Ermäßigung relevant"-Haken hinter dem Einsatzort (Zweitkraft-Editor) */
-.ermaessigung-toggle {
+/* "Ermäßigung relevant"-Haken hinter dem Einsatzort (Zweitkraft-Editor).
+   Unter .input-group verschachtelt, damit die Regel die globale
+   ".input-group label { display:block }" schlägt (sonst steht der Text
+   unter statt rechts neben dem Haken). */
+.input-group .ermaessigung-toggle {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 6px;
   margin-top: 8px;
@@ -2763,11 +2783,60 @@ textarea {
   cursor: pointer;
   user-select: none;
 }
-.ermaessigung-toggle input {
+.input-group .ermaessigung-toggle input {
+  flex: 0 0 auto;
   width: 16px;
   height: 16px;
+  margin: 0;
   cursor: pointer;
   accent-color: #2ed573;
+}
+
+/* "Männlich"-Opt-in im Zweitkraft-Editor */
+.input-group .maennlich-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+}
+.input-group .maennlich-toggle input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #2ed573;
+}
+
+/* Berufe-Blöcke (je Beruf ein Abschnitt mit eigenen Einsatzorten) */
+.berufe-section > .beruf-block {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+}
+.beruf-block-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.beruf-select-group {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.beruf-remove {
+  flex: 0 0 auto;
+}
+.beruf-sublabel {
+  display: block;
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 4px 0 8px;
+}
+.add-beruf-btn {
+  margin-top: 4px;
 }
 
 .editor-container {
@@ -5128,15 +5197,17 @@ export default {
         schuljahr_id: this.currentSchuljahrId,
         name: '',
         kuerzel: '',
-        typ: 'Kinderpfleger:in', // Standard-Typ
+        berufe: ['Kinderpflegerin'],   // bis zu 3 Berufe (kanonische, weibliche Form)
+        maennlich: false,              // Opt-in: männliche Berufsform
         einsatzort: '',
         farbe: getInitialColor(),
         textfarbe: '#ffffff',
-        pflichtstunden_masse: [{einsatzort: 'IB Schule', stunden: 20, ermaessigung_relevant: true}],
+        pflichtstunden_masse: [{einsatzort: 'IB Schule', stunden: 20, ermaessigung_relevant: true, beruf_index: 1, _uid: 'seed-1'}],
         ermaessigung: 0,
         upz: 20,
         grund_ermaessigung: '',
       },
+      berufeOptionen: ['Kinderpflegerin', 'Erzieherin', 'Praktikantin', 'Individualbegleitung'],
       currentSchuelerStundenPlan: {
         id: null,
         klasse_name: null,
@@ -5285,12 +5356,13 @@ export default {
       );
     },
     isZweitkraftFormValid() {
+      const berufe = this.currentZweitkraft.berufe || [];
       return (
           this.currentZweitkraft.name &&
           this.currentZweitkraft.name.trim().length > 0 &&
           this.currentZweitkraft.kuerzel &&
           this.currentZweitkraft.kuerzel.trim().length > 0 &&
-          this.currentZweitkraft.typ // Sicherstellen, dass ein Beruf gewählt wurde
+          berufe.length > 0 && !!berufe[0] // Mindestens ein Beruf gewählt
       );
     },
     isRaumFormValid() {
@@ -5597,11 +5669,12 @@ export default {
           schuljahr_id: this.currentSchuljahrId,
           name: '',
           kuerzel: '',
-          typ: 'Kinderpfleger:in', // Standard-Typ
+          berufe: ['Kinderpflegerin'],   // bis zu 3 Berufe (kanonische, weibliche Form)
+          maennlich: false,
           einsatzort: '',
           farbe: getInitialColor(),       // Ein anderes Orange zur Unterscheidung
           textfarbe: '#ffffff',
-          pflichtstunden_masse: [{einsatzort: 'IB Schule', stunden: 20, ermaessigung_relevant: true}],   // Beispielhafter Standardwert
+          pflichtstunden_masse: [{einsatzort: 'IB Schule', stunden: 20, ermaessigung_relevant: true, beruf_index: 1, _uid: this.nextMassUid()}],
           ermaessigung: 0,
           upz: 20,
           grund_ermaessigung: '',
@@ -5742,7 +5815,57 @@ export default {
 
       console.log("Lehrer mit neuer Aktivität", this.activeLehrer);
     },
-    addPflichtstundenMass() {
+    // Eindeutige, stabile Zeilen-ID für :key (Zeilen sind je Beruf gefiltert).
+    nextMassUid() {
+      this._massUidCounter = (this._massUidCounter || 0) + 1;
+      return 'm-' + Date.now() + '-' + this._massUidCounter;
+    },
+    // Berufsbezeichnung für die Anzeige: gespeichert ist die kanonische (weibliche)
+    // Form; bei "männlich" wird das End-"in" entfernt (Individualbegleitung bleibt).
+    berufLabel(beruf) {
+      const b = (beruf == null ? '' : String(beruf)).trim();
+      if (!b) return '';
+      return this.currentZweitkraft && this.currentZweitkraft.maennlich
+          ? b.replace(/in$/, '')
+          : b;
+    },
+    selectBeruf(bIdx, opt) {
+      if (this.currentZweitkraft && Array.isArray(this.currentZweitkraft.berufe)) {
+        this.currentZweitkraft.berufe[bIdx] = opt; // kanonische (weibliche) Form
+      }
+      this.activeDropdown = null;
+    },
+    addBeruf() {
+      const cz = this.currentZweitkraft;
+      if (!cz) return;
+      if (!Array.isArray(cz.berufe)) cz.berufe = [];
+      if (cz.berufe.length >= 3) return;
+      cz.berufe.push('Kinderpflegerin');
+    },
+    removeBeruf(bIdx) {
+      const cz = this.currentZweitkraft;
+      if (!cz || !Array.isArray(cz.berufe)) return;
+      const entfernt = bIdx + 1; // 1-basierter beruf_index des entfernten Berufs
+      cz.berufe.splice(bIdx, 1);
+      // Zeilen des entfernten Berufs löschen, höhere Berufe um 1 nachrücken.
+      cz.pflichtstunden_masse = (cz.pflichtstunden_masse || [])
+          .filter(m => (Number(m.beruf_index) || 1) !== entfernt)
+          .map(m => {
+            const bi = Number(m.beruf_index) || 1;
+            return bi > entfernt ? { ...m, beruf_index: bi - 1 } : m;
+          });
+    },
+    // Regelstundenmaß-Zeilen eines Berufs (1-basiert).
+    rowsForBeruf(berufIndex) {
+      return (this.currentZweitkraft.pflichtstunden_masse || [])
+          .filter(m => (Number(m.beruf_index) || 1) === berufIndex);
+    },
+    removeMass(mass) {
+      const arr = this.currentZweitkraft.pflichtstunden_masse || [];
+      const idx = arr.indexOf(mass);
+      if (idx >= 0) arr.splice(idx, 1);
+    },
+    addPflichtstundenMass(berufIndex = 1) {
       if (!this.currentZweitkraft) return;
 
       // In Vue 3 reicht eine einfache Prüfung und Zuweisung
@@ -5754,7 +5877,9 @@ export default {
       this.currentZweitkraft.pflichtstunden_masse.push({
         einsatzort: '',
         stunden: 0,
-        ermaessigung_relevant: true   // Standard: angehakt
+        ermaessigung_relevant: true,   // Standard: angehakt
+        beruf_index: berufIndex,       // welchem Beruf diese Zeile gehört
+        _uid: this.nextMassUid()
       });
     },
     // Planbare Stunden eines Einsatzorts = Regelstundenmaß minus dessen Anteil an
@@ -5983,18 +6108,30 @@ export default {
               upz: Number(item.upz) || 0
             };
           } else if (this.activeCategory === 'zweitkraft') {
+            // Berufe (typ/typ2/typ3) in ein Array überführen; Alt-Format ":in"
+            // auf die kanonische (weibliche) Form normalisieren. Mind. 1 Beruf.
+            const normBeruf = (b) => (b == null ? '' : String(b).replace(':in', 'in').trim());
+            const berufe = [item.typ, item.typ2, item.typ3]
+                .map(normBeruf).filter(b => b !== '');
+            if (berufe.length === 0) berufe.push('Kinderpflegerin');
+
             // Das Backend liefert den Regelstundenwert als 'soll_stunden',
             // das Bearbeitungsformular bindet aber an 'stunden'. Beim Laden
             // normalisieren, sonst bleibt das Feld leer / zeigt NaN.
             this.currentZweitkraft = {
               ...item,
+              berufe,
+              maennlich: !!Number(item.maennlich),
               pflichtstunden_masse: (item.pflichtstunden_masse || []).map(m => ({
                 ...m,
                 stunden: Number(m.stunden ?? m.soll_stunden ?? 0),
                 // DB liefert 0/1; fehlt der Wert (Alt-Datensatz) -> standardmäßig angehakt.
                 ermaessigung_relevant: m.ermaessigung_relevant === undefined
                     ? true
-                    : !!Number(m.ermaessigung_relevant)
+                    : !!Number(m.ermaessigung_relevant),
+                // beruf_index 1..3, Fallback 1 (Erstberuf) für Alt-Datensätze.
+                beruf_index: Math.min(3, Math.max(1, Number(m.beruf_index) || 1)),
+                _uid: this.nextMassUid()
               }))
             };
           } else if (this.activeCategory === 'raum') {
@@ -8207,9 +8344,14 @@ export default {
         const ermaessigung = parseFloat(this.currentZweitkraft.ermaessigung) || 0;
         this.currentZweitkraft.upz = (gesamtPflicht - ermaessigung).toFixed(2);
 
-        // 3. Payload vorbereiten
+        // 3. Payload vorbereiten – Berufe-Array auf typ/typ2/typ3 abbilden.
+        const berufe = (this.currentZweitkraft.berufe || []).filter(b => b && String(b).trim() !== '');
         const payload = {
           ...this.currentZweitkraft,
+          typ: berufe[0] || 'Kinderpflegerin',
+          typ2: berufe[1] || null,
+          typ3: berufe[2] || null,
+          maennlich: this.currentZweitkraft.maennlich ? 1 : 0,
           schuljahr_id: this.currentSchuljahrId
         };
 
@@ -8246,13 +8388,6 @@ export default {
         this.editingAktivitaet.einsatzort = ort;
       } else if (this.currentActivity) {
         this.currentActivity.einsatzort = ort;
-      }
-      this.activeDropdown = null;
-    },
-    selectType(t) {
-      // Wird nur noch vom Zweitkraft-Typ-Dropdown genutzt.
-      if (this.activeCategory === 'zweitkraft') {
-        this.currentZweitkraft.typ = t;
       }
       this.activeDropdown = null;
     },

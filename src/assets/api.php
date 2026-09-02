@@ -246,11 +246,48 @@ function elli_ensure_schule_columns(PDO $conn) {
 }
 
 // Selbstheilung: Spalte fuer "Ermaessigung relevant?" je Einsatzort-Zeile einer
-// Zweitkraft. Standard 1 (angehakt) – so bleiben Alt-Datensaetze unveraendert
-// in die Ermaessigungsverteilung einbezogen.
+// Zweitkraft (Standard 1 = angehakt) und beruf_index (welchem der bis zu drei
+// Berufe der Einsatzort zugeordnet ist; Standard 1 = Erstberuf).
 function elli_ensure_zweitkraft_stundentafel_columns(PDO $conn) {
     $conn->exec("ALTER TABLE zweitkraft_stundentafel
-        ADD COLUMN IF NOT EXISTS ermaessigung_relevant TINYINT(1) NOT NULL DEFAULT 1");
+        ADD COLUMN IF NOT EXISTS ermaessigung_relevant TINYINT(1) NOT NULL DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS beruf_index TINYINT(1) NOT NULL DEFAULT 1");
+}
+
+// Selbstheilung: Zweit-/Drittberuf und Geschlechts-Flag der Zweitkraft.
+// typ2/typ3 halten die kanonische (weibliche) Berufsbezeichnung; maennlich
+// steuert nur die Anzeige (Opt-In auf die maennliche Form).
+function elli_ensure_zweitkraft_columns(PDO $conn) {
+    $conn->exec("ALTER TABLE zweitkraft
+        ADD COLUMN IF NOT EXISTS typ2 VARCHAR(100) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS typ3 VARCHAR(100) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS maennlich TINYINT(1) NOT NULL DEFAULT 0");
+}
+
+// Berufsbezeichnung fuers Ausgeben aufbereiten: gespeichert wird die kanonische
+// (weibliche) Form; bei maennlich wird das End-"in" entfernt (Kinderpflegerin ->
+// Kinderpfleger, Erzieherin -> Erzieher, Praktikantin -> Praktikant). Formen ohne
+// End-"in" (z. B. Individualbegleitung) bleiben unveraendert. Alt-Werte mit ":in"
+// werden zuvor auf die kanonische Form normalisiert.
+function elli_beruf_form(?string $beruf, bool $maennlich): string {
+    $beruf = trim((string)$beruf);
+    if ($beruf === '') return '';
+    $beruf = str_replace(':in', 'in', $beruf); // Alt-Format "Erzieher:in"
+    if ($maennlich) {
+        $beruf = preg_replace('/in$/', '', $beruf);
+    }
+    return $beruf;
+}
+
+// Alle (bis zu drei) Berufe einer Zweitkraft als kommaseparierte Anzeige.
+function elli_berufe_anzeige(array $z): string {
+    $maennlich = !empty($z['maennlich']);
+    $teile = [];
+    foreach (['typ', 'typ2', 'typ3'] as $spalte) {
+        $form = elli_beruf_form($z[$spalte] ?? '', $maennlich);
+        if ($form !== '') $teile[] = $form;
+    }
+    return implode(', ', $teile);
 }
 
 if ($action === 'get_schuljahre') {
@@ -664,6 +701,7 @@ if ($action === 'load_editor_data') {
         $res['erstkraefte'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         // Zweitkräfte des gewählten Jahres
+        elli_ensure_zweitkraft_columns($conn);
         $stmt = $conn->prepare("SELECT * FROM zweitkraft WHERE schuljahr_id = :sid ORDER BY name ASC");
                 $stmt->execute([':sid' => $sid]);
                 $zweitkraefte = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -673,7 +711,7 @@ if ($action === 'load_editor_data') {
                     $stmtM = $conn->prepare("
                         SELECT zst.id, zst.aktivitaet_id, a.name AS aktivitaet_name,
                                zst.einsatzort, zst.soll_stunden, zst.besetzung_typ,
-                               zst.ermaessigung_relevant
+                               zst.ermaessigung_relevant, zst.beruf_index
                         FROM zweitkraft_stundentafel AS zst
                         LEFT JOIN aktivitaet AS a ON a.id = zst.aktivitaet_id
                         WHERE zst.zweitkraft_id = ?
@@ -1348,17 +1386,29 @@ if ($action === 'delete_element') {
 if ($action === 'save_zweitkraft') {
     $data = json_decode(file_get_contents('php://input'), true);
     try {
+        // WICHTIG: DDL (ALTER TABLE) VOR der Transaktion ausfuehren. In MariaDB
+        // loest jedes ALTER TABLE einen impliziten Commit aus – innerhalb einer
+        // Transaktion wuerde der spaetere commit() sonst mit "There is no active
+        // transaction" scheitern.
+        elli_ensure_zweitkraft_columns($conn);
+        elli_ensure_zweitkraft_stundentafel_columns($conn);
+
         $conn->beginTransaction();
+
+        // Zweit-/Drittberuf sind optional; leere Werte -> NULL.
+        $typ2 = (isset($data['typ2']) && trim((string)$data['typ2']) !== '') ? $data['typ2'] : null;
+        $typ3 = (isset($data['typ3']) && trim((string)$data['typ3']) !== '') ? $data['typ3'] : null;
+        $maennlich = (int)($data['maennlich'] ?? 0);
 
         // 1. STAMMDATEN SPEICHERN
         if (isset($data['id']) && $data['id']) {
             $stmt = $conn->prepare("UPDATE zweitkraft SET
-                name = ?, kuerzel = ?, typ = ?,
+                name = ?, kuerzel = ?, typ = ?, typ2 = ?, typ3 = ?, maennlich = ?,
                 farbe = ?, textfarbe = ?,
                 ermaessigung = ?, grund_ermaessigung = ?, upz = ?
                 WHERE id = ?");
             $stmt->execute([
-                $data['name'], $data['kuerzel'] ?? '', $data['typ'] ?? 'Lehrkraft',
+                $data['name'], $data['kuerzel'] ?? '', $data['typ'] ?? 'Lehrkraft', $typ2, $typ3, $maennlich,
                 $data['farbe'] ?? null, $data['textfarbe'] ?? '#ffffff',
                 $data['ermaessigung'] ?? 0, $data['grund_ermaessigung'] ?? null, $data['upz'] ?? 0, $data['id']
             ]);
@@ -1366,10 +1416,10 @@ if ($action === 'save_zweitkraft') {
         } else {
             // INSERT
             $stmt = $conn->prepare("INSERT INTO zweitkraft
-                (schuljahr_id, name, kuerzel, typ, farbe, textfarbe, ermaessigung, grund_ermaessigung, upz)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                (schuljahr_id, name, kuerzel, typ, typ2, typ3, maennlich, farbe, textfarbe, ermaessigung, grund_ermaessigung, upz)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
-                $data['schuljahr_id'], $data['name'], $data['kuerzel'] ?? '', $data['typ'] ?? 'Lehrkraft',
+                $data['schuljahr_id'], $data['name'], $data['kuerzel'] ?? '', $data['typ'] ?? 'Lehrkraft', $typ2, $typ3, $maennlich,
                 $data['farbe'] ?? null, $data['textfarbe'] ?? '#ffffff',
                 $data['ermaessigung'] ?? 0, $data['grund_ermaessigung'] ?? null, $data['upz'] ?? 0
             ]);
@@ -1377,7 +1427,7 @@ if ($action === 'save_zweitkraft') {
         }
 
         // 2. STUNDENTAFEL (SOLL-Stunden je Aktivität/Einsatzort) SYNCHRONISIEREN
-        elli_ensure_zweitkraft_stundentafel_columns($conn);
+        // (Spalten-Selbstheilung erfolgte oben VOR der Transaktion.)
         // Lösche alte Einträge
         $stmtDel = $conn->prepare("DELETE FROM zweitkraft_stundentafel WHERE zweitkraft_id = ?");
         $stmtDel->execute([$id]);
@@ -1388,8 +1438,8 @@ if ($action === 'save_zweitkraft') {
         if (!empty($data['pflichtstunden_masse']) && is_array($data['pflichtstunden_masse'])) {
 
             $stmtIns = $conn->prepare("
-                INSERT INTO zweitkraft_stundentafel (zweitkraft_id, aktivitaet_id, einsatzort, soll_stunden, besetzung_typ, ermaessigung_relevant)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO zweitkraft_stundentafel (zweitkraft_id, aktivitaet_id, einsatzort, soll_stunden, besetzung_typ, ermaessigung_relevant, beruf_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ");
 
             foreach ($data['pflichtstunden_masse'] as $mass) {
@@ -1398,6 +1448,9 @@ if ($action === 'save_zweitkraft') {
                 $sollStunden = $mass['stunden'] ?? $mass['soll_stunden'] ?? 0;
                 // Nur speichern, wenn Stunden, Ort oder Aktivität gefüllt sind
                 if (!empty($sollStunden) || !empty($mass['einsatzort']) || !empty($mass['aktivitaet_id'])) {
+                    // beruf_index: 1..3, Fallback 1 (Erstberuf)
+                    $berufIndex = (int)($mass['beruf_index'] ?? 1);
+                    if ($berufIndex < 1 || $berufIndex > 3) $berufIndex = 1;
                     $stmtIns->execute([
                         $id,
                         !empty($mass['aktivitaet_id']) ? (int)$mass['aktivitaet_id'] : null,
@@ -1405,7 +1458,8 @@ if ($action === 'save_zweitkraft') {
                         str_replace(',', '.', (string)$sollStunden),
                         $mass['besetzung_typ'] ?? 'einzel',
                         // Fehlt der Schluessel (Alt-Client), gilt Standard "angehakt".
-                        (int)($mass['ermaessigung_relevant'] ?? true)
+                        (int)($mass['ermaessigung_relevant'] ?? true),
+                        $berufIndex
                     ]);
                 }
             }
@@ -3282,7 +3336,8 @@ if ($action === 'get_raum_verfuegbarkeit') {
           $schule3 = $adressZeilen[2] ?? '';
 
           // 2. Zweitkraft
-          $stmtZ = $conn->prepare("SELECT name, typ, upz, ermaessigung, grund_ermaessigung
+          elli_ensure_zweitkraft_columns($conn);
+          $stmtZ = $conn->prepare("SELECT name, typ, typ2, typ3, maennlich, upz, ermaessigung, grund_ermaessigung
                                    FROM zweitkraft WHERE id = ? AND schuljahr_id = ?");
           $stmtZ->execute([$zweitkraft_id, $schuljahr_id]);
           $z = $stmtZ->fetch(PDO::FETCH_ASSOC);
@@ -3336,7 +3391,8 @@ if ($action === 'get_raum_verfuegbarkeit') {
           $tpl = new \PhpOffice\PhpWord\TemplateProcessor($tplPath);
 
           $tpl->setValue('schuljahr', $esc($schule['schuljahr']));
-          $tpl->setValue('zweitkraft', $esc($z['name'] . ($z['typ'] ? ', ' . $z['typ'] : '')));
+          $berufeText = elli_berufe_anzeige($z);
+          $tpl->setValue('zweitkraft', $esc($z['name'] . ($berufeText !== '' ? ', ' . $berufeText : '')));
           $tpl->setValue('schule1', $esc($schule1));
           $tpl->setValue('schule2', $esc($schule2));
           $tpl->setValue('schule3', $esc($schule3));

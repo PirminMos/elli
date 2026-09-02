@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS `zweitkraft` (
   `id`                 INT(11)      NOT NULL AUTO_INCREMENT,
   `schuljahr_id`       INT(11)      NOT NULL,
   `typ`                VARCHAR(100) DEFAULT NULL,
+  `typ2`               VARCHAR(100) DEFAULT NULL,
+  `typ3`               VARCHAR(100) DEFAULT NULL,
+  `maennlich`          TINYINT(1)   NOT NULL DEFAULT 0,
   `name`               VARCHAR(255) NOT NULL,
   `kuerzel`            VARCHAR(10)  DEFAULT NULL,
   `farbe`              VARCHAR(7)   DEFAULT NULL,
@@ -148,6 +151,7 @@ CREATE TABLE IF NOT EXISTS `zweitkraft_stundentafel` (
   `soll_stunden`          DECIMAL(5,2)             NOT NULL,
   `besetzung_typ`         ENUM('einzel','doppel')  DEFAULT 'einzel',
   `ermaessigung_relevant` TINYINT(1)               NOT NULL DEFAULT 1,
+  `beruf_index`           TINYINT(1)               NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`),
   KEY `idx_zktafel_zweitkraft` (`zweitkraft_id`),
   KEY `idx_zktafel_aktivitaet` (`aktivitaet_id`)

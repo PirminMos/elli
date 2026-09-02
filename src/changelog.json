@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "95b87c6",
+      "hash": "0911ade",
+      "date": "2026-09-02",
+      "subject": "Feature: Zweit-/Drittberuf je Zweitkraft, Entgendern + \"Maennlich\"-Opt-in"
+    },
+    {
+      "hash": "0199461",
       "date": "2026-09-02",
       "subject": "Feature: Haken \"Ermaessigung relevant\" je Einsatzort (Zweitkraft)"
     },
