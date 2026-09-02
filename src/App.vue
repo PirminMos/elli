@@ -1224,7 +1224,7 @@
                      @dragend="handleDragEnd"
                      @click="showStatus('Aktivitäten in den Plan ziehen')"
                      :style="{borderColor: a.farbe, color: a.farbe}">
-                  {{ a.name }}
+                  {{ a.name }}{{ a.einsatzort ? ' ' + a.einsatzort : '' }}
                 </div>
                 <button class="btn-add white-text" @click="openQuickAdd('aktivitaet')">+ Aktivität</button>
               </div>
@@ -2017,7 +2017,30 @@
 
           <div class="input-floating-group">
             <label>Einsatzort:</label>
-            <input v-model="editingAktivitaet.einsatzort" placeholder="z.B. HPT" class="glass-input-large">
+            <div class="custom-select-wrapper">
+              <div class="custom-select-trigger" @click.stop="toggleDropdown('neue-aktivitaet-einsatzort')">
+                <span>{{ editingAktivitaet.einsatzort || 'Einsatzort wählen...' }}</span>
+                <span class="arrow-down" :class="{ 'rotate': isDropdownOpen('neue-aktivitaet-einsatzort') }">▼</span>
+              </div>
+
+              <transition name="fade">
+                <div v-if="isDropdownOpen('neue-aktivitaet-einsatzort')" class="custom-options glass">
+                  <div v-if="einsatzorte.length === 0" class="custom-option" style="opacity: 0.6; cursor: default;">
+                    Keine Einsatzorte hinterlegt
+                  </div>
+                  <div
+                      v-for="ort in einsatzorte"
+                      :key="ort"
+                      class="custom-option"
+                      :class="{ selected: editingAktivitaet.einsatzort === ort }"
+                      @click="selectEinsatzort(ort)"
+                  >
+                    {{ ort }}
+                    <span v-if="editingAktivitaet.einsatzort === ort">✓</span>
+                  </div>
+                </div>
+              </transition>
+            </div>
           </div>
         </div>
 
@@ -7812,6 +7835,8 @@ export default {
           einsatzort: '',
           termine: []
         };
+        // Einsatzort-Auswahl im Modal befüllen (Orte der Zweitkräfte)
+        this.loadeinsatzorte();
         this.showNewAktivitaetModal = true;
       }
     },
@@ -8085,7 +8110,10 @@ export default {
       }
     },
     selectEinsatzort(ort) {
-      if (this.currentActivity) {
+      // Im Schnell-Anlege-Modal wird editingAktivitaet befüllt, sonst currentActivity.
+      if (this.showNewAktivitaetModal && this.editingAktivitaet) {
+        this.editingAktivitaet.einsatzort = ort;
+      } else if (this.currentActivity) {
         this.currentActivity.einsatzort = ort;
       }
       this.activeDropdown = null;
@@ -8598,7 +8626,10 @@ export default {
         const rawSource = this.editingAktivitaet || this.currentActivity;
         if (!rawSource) throw new Error("Keine Aktivitätsdaten gefunden.");
 
-        const activityData = JSON.parse(JSON.stringify(this.currentActivity || rawSource));
+        // Beim Schnell-Anlegen ("Neue Aktivität"-Modal) stammen die Daten aus
+        // editingAktivitaet, im Volleditor aus currentActivity.
+        const quelle = this.showNewAktivitaetModal ? (this.editingAktivitaet || rawSource) : this.currentActivity;
+        const activityData = JSON.parse(JSON.stringify(quelle));
 
         if (!this.currentSchuljahrId) {
           this.showStatus("Kein Schuljahr ausgewählt!", "error");
