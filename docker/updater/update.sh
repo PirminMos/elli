@@ -31,8 +31,11 @@ schritt "Projekt pruefen"
 
 git config --global --replace-all safe.directory "$REPO"
 
-if [ -n "$(git -C "$REPO" status --porcelain)" ]; then
-    abbruch "Es gibt lokale Aenderungen am Projekt. Das Update wuerde sie ueberschreiben und wurde deshalb abgebrochen."
+# Nur versionierte Aenderungen blockieren. Unversionierte Dateien (.env,
+# backups/, Editor-Ordner ...) sind ungefaehrlich: ein Pull wuerde sie nicht
+# anfassen und bricht von sich aus ab, falls doch eine im Weg liegt.
+if [ -n "$(git -C "$REPO" status --porcelain --untracked-files=no)" ]; then
+    abbruch "Es gibt lokale Aenderungen an Projektdateien. Das Update wuerde sie ueberschreiben und wurde deshalb abgebrochen."
 fi
 
 # Der eigene post-merge-Hook wuerde erneut 'docker compose up --build'

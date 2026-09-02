@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "f7030d9",
+      "hash": "887af43",
+      "date": "2026-09-02",
+      "subject": "Fix: Update pruefte auch unversionierte Dateien"
+    },
+    {
+      "hash": "fe434c1",
       "date": "2026-09-02",
       "subject": "Doku: Update-per-Klick im README erwaehnen"
     },

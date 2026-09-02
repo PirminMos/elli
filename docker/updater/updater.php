@@ -122,8 +122,10 @@ function pruefen(string $repo): array
     git($repo, ['rev-parse', '--abbrev-ref', 'HEAD'], $zweig);
     if ($zweig === '' || $zweig === 'HEAD') $zweig = 'main';
 
+    // Nur versionierte Aenderungen zaehlen – unversionierte Dateien (.env,
+    // backups/, Editor-Ordner) stehen einem Update nicht im Weg.
     $stand = '';
-    if (git($repo, ['status', '--porcelain'], $stand) === 0) {
+    if (git($repo, ['status', '--porcelain', '--untracked-files=no'], $stand) === 0) {
         $ergebnis['sauber'] = trim($stand) === '';
     }
 
