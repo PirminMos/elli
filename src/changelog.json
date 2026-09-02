@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "38cf385",
+      "hash": "898557a",
+      "date": "2026-09-02",
+      "subject": "Aendere Startseite: Update-Knopf beschriften, Aktivitaets-Hinweis raus"
+    },
+    {
+      "hash": "ad45b11",
       "date": "2026-09-02",
       "subject": "Feature: Aktivitaeten nach Erst- und Zweitkraft trennen"
     },

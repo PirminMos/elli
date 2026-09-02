@@ -126,10 +126,12 @@
         <p v-if="versionsDatum" class="version-hint">
           <button type="button" class="version-hint-btn" @click="showChangelogModal = true"
                   title="Änderungsverlauf anzeigen">Version vom {{ versionsDatum }}</button>
-          <!-- Update-Symbol: nur sichtbar, wenn der Update-Dienst läuft -->
+          <!-- Aktualisieren: nur sichtbar, wenn der Update-Dienst läuft -->
           <button v-if="updater.dienstDa" type="button" class="update-hint-btn"
-                  :class="{ 'update-da': updater.pruefung.updateVerfuegbar, 'update-dreht': updater.pruefeLaeuft || updater.state === 'laeuft' }"
-                  :title="updateTitel" @click="oeffneUpdateFenster">⟳</button>
+                  :class="{ 'update-da': updater.pruefung.updateVerfuegbar }"
+                  :title="updateTitel" @click="oeffneUpdateFenster">Aktualisieren
+            <span class="update-symbol"
+                  :class="{ 'update-dreht': updater.pruefeLaeuft || updater.state === 'laeuft' }">⟳</span></button>
         </p>
       </div>
 
@@ -246,11 +248,6 @@
       <div v-if="view === 'editor' && istAktivitaetsKategorie" class="editor-container glass">
         <div class="hero-section small">
           <h1 class="main-title">{{ currentActivity.id ? 'Aktivität bearbeiten' : 'Neue Aktivität' }}</h1>
-          <p class="kraft-typ-hinweis">
-            {{ currentActivity.kraft_typ === 'erst'
-                ? 'Erstkraft – erscheint im Lehrerstundenplan'
-                : 'Zweitkraft – erscheint im Diensteinsatzplan' }}
-          </p>
         </div>
 
         <div class="editor-grid-aktivitaet">
@@ -2866,12 +2863,6 @@ textarea {
 }
 
 /* Aktivitäten: Zuordnung Erstkraft/Zweitkraft */
-.kraft-typ-hinweis {
-  margin: 4px 0 0;
-  font-size: 13px;
-  opacity: 0.6;
-  text-align: center;
-}
 .kraft-typ-schalter {
   display: flex;
   gap: 8px;
@@ -2900,20 +2891,29 @@ textarea {
 .update-hint-btn {
   background: none;
   border: none;
-  padding: 0 0 0 8px;
+  margin-left: 10px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid currentColor;
   font: inherit;
-  font-size: 14px;
   line-height: 1;
   color: inherit;
   cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .update-hint-btn.update-da {
   color: #37c46a;
   text-shadow: 0 0 8px rgba(55, 196, 106, 0.7);
+  font-weight: 600;
 }
-.update-hint-btn.update-dreht {
-  animation: update-spin 1.1s linear infinite;
+.update-symbol {
   display: inline-block;
+  margin-left: 3px;
+  font-size: 14px;
+  text-decoration: none;
+}
+.update-symbol.update-dreht {
+  animation: update-spin 1.1s linear infinite;
 }
 
 @keyframes update-spin {
