@@ -2367,7 +2367,10 @@ if ($action === 'export_schuelerstundenplan') {
             $wtRows[] = $trow($leer, 460);
         }
         $timetable = $tbl($gridWT, $wtRows);
-        $legende = $para('1* Im Klassenverband      2** äußere Differenzierung', false, 18, 'left', 0);
+        // Legende gehoert unter die Stundentafel (rechte Spalte). Dort ist es
+        // schmal, deshalb zwei Zeilen statt einer breiten.
+        $legende = $para('1* Im Klassenverband', false, 18, 'left', 0)
+                 . $para('2** äußere Differenzierung', false, 18, 'left', 0);
 
         // --- Stundentafel (rechts) mit Bereichen: Pflichtfächer, Wahlpflichtbereich, Wahlfächer ---
         $SF = 1800; $S1 = 560; $S2 = 560; $SS = 700; $STW = $SF + $S1 + $S2 + $SS;
@@ -2408,8 +2411,12 @@ if ($action === 'export_schuelerstundenplan') {
         // Freiraum-Zeilen auf die Höhe des Wochenrasters verteilen. Wahlpflichtbereich
         // und Wahlfächer werden nach dem Export händisch ausgefüllt und bekommen daher
         // leere Zeilen. Überzähliger Platz geht an die Pflichtfächer (wie im Original).
-        $emptyPflicht = 3; $emptyWahlpflicht = 3; $emptyWahlfaecher = 2;
-        $ttMin = 320 + max(1, count($raster)) * 460;
+        // Wahlpflichtbereich und Wahlfächer bekommen je genau eine Leerzeile;
+        // der uebrige Platz geht an die Pflichtfächer.
+        $emptyPflicht = 3; $emptyWahlpflicht = 1; $emptyWahlfaecher = 1;
+        // Zielhoehe = Wochenraster links, abzueglich der zwei Legendenzeilen,
+        // die jetzt unter der Stundentafel stehen.
+        $ttMin = 320 + max(1, count($raster)) * 460 - 400;
         $fixH  = 320 + 300 + 300 + count($tafel) * 280 + 300 + 300 + 300; // Titel,Kopf,Pflicht-Label,Fächer,Wahlpfl-Label,Wahlf-Label,Summe
         $rest = (int)floor(($ttMin - $fixH) / 300) - ($emptyPflicht + $emptyWahlpflicht + $emptyWahlfaecher);
         if ($rest > 0) $emptyPflicht += $rest;
@@ -2435,8 +2442,8 @@ if ($action === 'export_schuelerstundenplan') {
         $LCOL = 10500; $RCOL = 3786;
         $outer = $tbl([$LCOL, $RCOL], [
             $trow([
-                $tcell($timetable . $legende . '<w:p/>', $LCOL, 1, null, 'top', true),
-                $tcell($stundentafel . '<w:p/>', $RCOL, 1, null, 'top', true),
+                $tcell($timetable . '<w:p/>', $LCOL, 1, null, 'top', true),
+                $tcell($stundentafel . $legende . '<w:p/>', $RCOL, 1, null, 'top', true),
             ]),
         ], false);
 

@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "511181c",
+      "hash": "4e18014",
+      "date": "2026-09-02",
+      "subject": "Aendere Schuelerstundenplan: Legende unter die Stundentafel"
+    },
+    {
+      "hash": "43d1938",
       "date": "2026-09-02",
       "subject": "Fix: Geteilter Unterricht im Lehrerplan-Export immer als ++"
     },
