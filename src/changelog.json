@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "c2a7627",
+      "hash": "af00c68",
+      "date": "2026-09-02",
+      "subject": "Fix: \"1 Aenderung\" statt \"1 Aenderungen\" im Update-Hinweis"
+    },
+    {
+      "hash": "29978a3",
       "date": "2026-09-02",
       "subject": "Fix: Laufenden Update-Vorgang ueber die PID erkennen"
     },

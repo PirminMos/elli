@@ -5507,7 +5507,8 @@ export default {
     updateTitel() {
       if (this.updater.state === 'laeuft') return 'Update läuft …';
       if (this.updater.pruefung.updateVerfuegbar) {
-        return `Update verfügbar (${this.updater.pruefung.anzahl} Änderungen)`;
+        const n = this.updater.pruefung.anzahl;
+        return `Update verfügbar (${n} ${n === 1 ? 'Änderung' : 'Änderungen'})`;
       }
       return 'Auf Updates prüfen';
     },
