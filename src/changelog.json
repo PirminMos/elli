@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "5441577",
+      "hash": "e677f3f",
+      "date": "2026-09-02",
+      "subject": "Feature: Update per Klick aus der Weboberflaeche"
+    },
+    {
+      "hash": "42f2bfe",
       "date": "2026-09-02",
       "subject": "Aendere Namensreihenfolge auf \"Nachname Vorname\""
     },

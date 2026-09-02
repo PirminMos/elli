@@ -127,6 +127,10 @@
         <p v-if="versionsDatum" class="version-hint">
           <button type="button" class="version-hint-btn" @click="showChangelogModal = true"
                   title="Änderungsverlauf anzeigen">Version vom {{ versionsDatum }}</button>
+          <!-- Update-Symbol: nur sichtbar, wenn der Update-Dienst läuft -->
+          <button v-if="updater.dienstDa" type="button" class="update-hint-btn"
+                  :class="{ 'update-da': updater.pruefung.updateVerfuegbar, 'update-dreht': updater.pruefeLaeuft || updater.state === 'laeuft' }"
+                  :title="updateTitel" @click="oeffneUpdateFenster">⟳</button>
         </p>
       </div>
 
@@ -2075,6 +2079,92 @@
     </div>
   </transition>
 
+  <!-- Update-Fenster. Während das Update läuft, sperrt es bewusst die
+       gesamte Oberfläche: kein Schließen-Knopf, kein Klick daneben. -->
+  <transition name="fade">
+    <div v-if="showUpdateModal" class="modal-overlay update-overlay">
+      <div class="modal-content glass-modal update-modal" @click.stop>
+
+        <div class="modal-header">
+          <h3><span class="icon">⬇️</span> Programm aktualisieren</h3>
+          <button v-if="!updateBlockiert" class="close-btn-circle" @click="schliesseUpdateFenster">×</button>
+        </div>
+
+        <div class="modal-body update-body">
+          <!-- 1. Suche läuft -->
+          <p v-if="updater.pruefeLaeuft" class="update-info">
+            <span class="update-spinner"></span> Es wird nach Neuerungen gesucht …
+          </p>
+
+          <!-- 2. Update läuft -->
+          <template v-else-if="updater.state === 'laeuft' || updater.state === 'fertig'">
+            <p class="update-schritt">
+              <span class="update-spinner"></span> {{ updater.schritt || 'Update wird vorbereitet …' }}
+            </p>
+            <p class="update-warnhinweis">
+              Bitte dieses Fenster offen lassen und den Rechner nicht ausschalten.
+              Der Vorgang kann einige Minuten dauern; danach lädt die Anwendung von selbst neu.
+            </p>
+            <pre ref="updateLogBox" class="update-log">{{ updater.log.join('\n') }}</pre>
+          </template>
+
+          <!-- 3. Fehlgeschlagen -->
+          <template v-else-if="updater.state === 'fehler'">
+            <p class="update-fehler">Das Update ist nicht durchgelaufen.</p>
+            <p class="update-info">{{ updater.fehler }}</p>
+            <pre v-if="updater.log.length" ref="updateLogBox" class="update-log">{{ updater.log.join('\n') }}</pre>
+          </template>
+
+          <!-- 4. Kein Update möglich (z.B. keine Git-Installation) -->
+          <p v-else-if="!updater.pruefung.moeglich" class="update-info">
+            {{ updater.pruefung.meldung || 'Der Update-Dienst konnte den Stand nicht ermitteln.' }}
+          </p>
+
+          <!-- 5. Alles aktuell -->
+          <p v-else-if="!updater.pruefung.updateVerfuegbar" class="update-info">
+            Alles aktuell – es liegt keine neuere Version vor.
+            <small class="update-stand">Stand: {{ updater.pruefung.lokal }}</small>
+          </p>
+
+          <!-- 6. Update verfügbar -->
+          <template v-else>
+            <p class="update-info">
+              Es {{ updater.pruefung.anzahl === 1 ? 'liegt eine neue Änderung' : 'liegen ' + updater.pruefung.anzahl + ' neue Änderungen' }} bereit:
+            </p>
+            <ul class="changelog-list update-liste">
+              <li v-for="c in updater.pruefung.commits" :key="c.hash" class="changelog-item">
+                <span class="changelog-date">{{ formatiereDatum(c.date) }}</span>
+                <span class="changelog-subject">{{ c.subject }}</span>
+              </li>
+            </ul>
+            <p v-if="!updater.pruefung.sauber" class="update-fehler">
+              Achtung: Im Projektordner liegen eigene Änderungen. Das Update würde sie
+              überschreiben und bricht deshalb ab.
+            </p>
+            <p class="update-warnhinweis">
+              Während des Updates kann nicht weitergearbeitet werden. Deine Daten
+              bleiben erhalten – die Datenbank wird nicht angefasst.
+            </p>
+          </template>
+        </div>
+
+        <div v-if="!updateBlockiert" class="modal-footer">
+          <button v-if="updater.state === 'bereit' && updater.pruefung.updateVerfuegbar && updater.pruefung.sauber"
+                  class="glass-btn-save" @click="starteUpdate">
+            Jetzt aktualisieren
+          </button>
+          <button v-else-if="updater.state === 'fehler'" class="glass-btn-save" @click="oeffneUpdateFenster">
+            Erneut versuchen
+          </button>
+          <button v-else class="glass-btn-save" @click="schliesseUpdateFenster">
+            Schließen
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </transition>
+
   <transition name="fade">
     <div v-if="showTemplateModal" class="modal-overlay" @click.self="showTemplateModal = false">
       <div class="modal-content glass-modal" role="dialog" aria-modal="true" style="max-width: 460px;">
@@ -2744,6 +2834,99 @@ textarea {
   flex: 1 1 auto;
   font-size: 14px;
   line-height: 1.35;
+}
+
+/* Update-Symbol neben dem Versionshinweis */
+.update-hint-btn {
+  background: none;
+  border: none;
+  padding: 0 0 0 8px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+}
+.update-hint-btn.update-da {
+  color: #37c46a;
+  text-shadow: 0 0 8px rgba(55, 196, 106, 0.7);
+}
+.update-hint-btn.update-dreht {
+  animation: update-spin 1.1s linear infinite;
+  display: inline-block;
+}
+
+@keyframes update-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Update-Fenster */
+.update-overlay {
+  /* Während des Updates soll nichts dahinter erreichbar sein */
+  backdrop-filter: blur(3px);
+}
+.update-modal {
+  max-width: 680px;
+  width: 92%;
+}
+.update-body {
+  max-height: 62vh;
+  overflow-y: auto;
+}
+.update-info,
+.update-schritt,
+.update-fehler,
+.update-warnhinweis {
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+.update-schritt {
+  font-weight: 600;
+  font-size: 15px;
+}
+.update-warnhinweis {
+  font-size: 13px;
+  opacity: 0.7;
+}
+.update-fehler {
+  color: #ff8b8b;
+  font-weight: 600;
+}
+.update-stand {
+  display: block;
+  margin-top: 6px;
+  opacity: 0.6;
+  font-size: 12px;
+}
+.update-liste {
+  max-height: 30vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.update-log {
+  margin: 0;
+  padding: 10px;
+  max-height: 32vh;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.85;
+}
+.update-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #37c46a;
+  border-radius: 50%;
+  animation: update-spin 0.8s linear infinite;
 }
 
 /* "Ermäßigung relevant"-Haken hinter dem Einsatzort (Zweitkraft-Editor).
@@ -5252,6 +5435,27 @@ export default {
       showLehrerPlanModal: false,
       showDienstPlanModal: false,
       showChangelogModal: false,
+      showUpdateModal: false,
+      // Zustand des Update-Dienstes (eigener Container, Port 8081).
+      updater: {
+        dienstDa: false,        // Dienst erreichbar? Sonst kein Update-Symbol
+        pruefeLaeuft: false,
+        state: 'bereit',        // bereit | laeuft | fertig | fehler
+        schritt: '',
+        log: [],
+        fehler: '',
+        pruefung: {
+          moeglich: false,
+          updateVerfuegbar: false,
+          anzahl: 0,
+          commits: [],
+          lokal: '',
+          entfernt: '',
+          sauber: true,
+          meldung: ''
+        }
+      },
+      updateTimer: null,
       isNewKlasse: false,
       klassen: [], // Hier sollten deine geladenen Klassen rein
       lehrerPlanForm: {
@@ -5298,6 +5502,19 @@ export default {
       const iso = (versionInfo && versionInfo.date) || '';
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
       return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+    },
+    // Beschriftung des Update-Symbols (Tooltip).
+    updateTitel() {
+      if (this.updater.state === 'laeuft') return 'Update läuft …';
+      if (this.updater.pruefung.updateVerfuegbar) {
+        return `Update verfügbar (${this.updater.pruefung.anzahl} Änderungen)`;
+      }
+      return 'Auf Updates prüfen';
+    },
+    // Solange das Update läuft (und bis die neue Version wieder da ist),
+    // bleibt das Fenster zu und die Oberfläche gesperrt.
+    updateBlockiert() {
+      return this.updater.state === 'laeuft' || this.updater.state === 'fertig';
     },
     // Änderungsverlauf für das Changelog-Modal (Datum als TT.MM.JJJJ).
     changelogEintraege() {
@@ -6293,6 +6510,133 @@ export default {
       const a = s * Math.min(l, 100 - l) / 100;
       const f = l / 100 - a / 100 * Math.max(-1, Math.min(k - 3, 9 - k, 1));
       return Math.round(255 * f).toString(16).padStart(2, '0');
+    },
+    // --- Update-Dienst -------------------------------------------------
+    // Der Dienst läuft in einem eigenen Container auf Port 8081. Er muss
+    // getrennt von /api.php sein: beim Update wird der web-Container ersetzt,
+    // die Anwendung wäre also mitten im Vorgang kurz nicht erreichbar.
+    updaterUrl(pfad) {
+      return `${window.location.protocol}//${window.location.hostname}:8081${pfad}`;
+    },
+    async updaterAnfrage(pfad, optionen = {}) {
+      const antwort = await fetch(this.updaterUrl(pfad), {cache: 'no-store', ...optionen});
+      return await antwort.json();
+    },
+    uebernehmeUpdateStatus(daten) {
+      if (!daten) return;
+      if (daten.state) this.updater.state = daten.state;
+      this.updater.schritt = daten.schritt || '';
+      this.updater.log = daten.log || [];
+      this.updater.fehler = daten.fehler || '';
+      if (daten.pruefung) this.updater.pruefung = daten.pruefung;
+    },
+    // Fragt den Dienst nach dem Stand bei GitHub. Beim Programmstart still
+    // im Hintergrund – ist kein Dienst installiert, bleibt das Symbol weg.
+    async pruefeUpdates(sichtbar = false) {
+      if (sichtbar) this.updater.pruefeLaeuft = true;
+      try {
+        const daten = await this.updaterAnfrage('/pruefen');
+        this.updater.dienstDa = true;
+        this.uebernehmeUpdateStatus(daten);
+        // Protokoll eines abgeschlossenen Laufs nach dem Neuladen abräumen
+        if (this.updater.state === 'fertig' && !this.showUpdateModal) {
+          await this.updaterAnfrage('/quittieren', {method: 'POST'});
+          this.updater.state = 'bereit';
+          this.updater.log = [];
+        }
+      } catch (e) {
+        this.updater.dienstDa = false;
+      } finally {
+        this.updater.pruefeLaeuft = false;
+      }
+    },
+    async oeffneUpdateFenster() {
+      this.showUpdateModal = true;
+      if (this.updater.state === 'laeuft') {
+        this.starteStatusAbfrage();
+        return;
+      }
+      this.updater.state = 'bereit';
+      await this.pruefeUpdates(true);
+    },
+    async schliesseUpdateFenster() {
+      if (this.updateBlockiert) return;
+      // Fehlerprotokoll beim Schließen verwerfen, sonst meldet der Dienst
+      // beim nächsten Start weiterhin den alten Fehlversuch.
+      if (this.updater.state === 'fehler') {
+        try {
+          await this.updaterAnfrage('/quittieren', {method: 'POST'});
+        } catch (e) { /* nicht schlimm */ }
+        this.updater.state = 'bereit';
+        this.updater.log = [];
+      }
+      this.showUpdateModal = false;
+    },
+    async starteUpdate() {
+      this.updater.state = 'laeuft';
+      this.updater.schritt = 'Update wird vorbereitet …';
+      this.updater.log = [];
+      try {
+        const daten = await this.updaterAnfrage('/update', {method: 'POST'});
+        if (daten && daten.error) {
+          this.updater.state = 'fehler';
+          this.updater.fehler = daten.error;
+          return;
+        }
+        this.uebernehmeUpdateStatus(daten);
+        this.starteStatusAbfrage();
+      } catch (e) {
+        this.updater.state = 'fehler';
+        this.updater.fehler = 'Der Update-Dienst antwortet nicht.';
+      }
+    },
+    starteStatusAbfrage() {
+      if (this.updateTimer) return;
+      this.updateTimer = setInterval(async () => {
+        try {
+          const daten = await this.updaterAnfrage('/status');
+          this.uebernehmeUpdateStatus(daten);
+          this.$nextTick(() => {
+            const box = this.$refs.updateLogBox;
+            if (box) box.scrollTop = box.scrollHeight;
+          });
+          if (daten.state === 'fertig') {
+            this.stoppeStatusAbfrage();
+            this.warteAufNeustart();
+          } else if (daten.state === 'fehler') {
+            this.stoppeStatusAbfrage();
+          }
+        } catch (e) {
+          // Dienst kurz nicht erreichbar – beim nächsten Durchlauf erneut
+        }
+      }, 1500);
+    },
+    stoppeStatusAbfrage() {
+      if (this.updateTimer) {
+        clearInterval(this.updateTimer);
+        this.updateTimer = null;
+      }
+    },
+    // Nach dem Bauen wird der web-Container ersetzt. Wir warten, bis die
+    // Anwendung wieder antwortet, und laden dann die neue Version.
+    async warteAufNeustart() {
+      this.updater.schritt = 'Neue Version wird gestartet …';
+      for (let i = 0; i < 90; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          const antwort = await fetch(`${API_URL}?action=get_schuljahre`, {cache: 'no-store'});
+          if (antwort.ok) break;
+        } catch (e) { /* Container startet noch */ }
+      }
+      try {
+        await this.updaterAnfrage('/quittieren', {method: 'POST'});
+      } catch (e) { /* nicht schlimm */ }
+      window.location.reload();
+    },
+    // ISO-Datum (JJJJ-MM-TT) als TT.MM.JJJJ ausgeben.
+    formatiereDatum(iso) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+      return m ? `${m[3]}.${m[2]}.${m[1]}` : (iso || '');
     },
     updateTimeFromUnits(input = null) {
       // Nur rechnen, wenn es ein Fach (Typ 'f') ist und wir eine Startzeit haben.
@@ -9005,6 +9349,8 @@ export default {
     history.replaceState({view: 'home'}, '', '#home');
     window.addEventListener('popstate', this.handleHardwareBack);
     this.loadSettings();
+    // Still im Hintergrund schauen, ob es eine neuere Version gibt.
+    this.pruefeUpdates();
 
     // Der robuste Klick-Handler:
     window.addEventListener('click', (e) => {
@@ -9026,6 +9372,7 @@ export default {
   unmounted() {
     // Sauber aufräumen, wenn die Komponente zerstört wird
     window.removeEventListener('popstate', this.handleHardwareBack);
+    this.stoppeStatusAbfrage();
   }
   ,
   watch: {

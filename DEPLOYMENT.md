@@ -41,6 +41,51 @@ PHP-Bibliotheken – das dauert ein paar Minuten. Danach geht es sofort.
 
 ---
 
+## Update aus der Weboberfläche (Update-Dienst)
+
+Neben dem Hinweis „Version vom …" auf der Startseite sitzt ein **⟳-Symbol**.
+Es prüft beim Programmstart still im Hintergrund, ob es auf GitHub neuere
+Commits gibt, und färbt sich grün, wenn ja. Ein Klick zeigt die anstehenden
+Änderungen; „Jetzt aktualisieren" erledigt in einem Rutsch:
+
+1. `git pull --ff-only` im Projektordner
+2. `docker compose build web`
+3. `docker compose up -d --no-deps web`
+
+Währenddessen sperrt ein Fortschrittsfenster die Oberfläche und zeigt die
+Ausgabe des Builds mit; danach lädt die Anwendung von selbst neu.
+Datenbank und Backup-Dienst werden **nicht** angefasst (`--no-deps`), die
+Daten bleiben also erhalten. Schema-Änderungen zieht `api.php` beim ersten
+Laden selbst nach.
+
+Dahinter steckt der Container `updater`:
+
+| | |
+|---|---|
+| Erreichbar unter | `http://127.0.0.1:8081` (nur lokal, nicht aus dem Netz) |
+| Endpunkte | `/status`, `/pruefen`, `POST /update`, `POST /quittieren` |
+| Quelle | `docker/updater/` (`updater.php` + `update.sh`) |
+
+**Voraussetzungen und Grenzen:**
+
+- Die Installation muss ein **`git clone`** sein (ein bloßes Entpacken eines
+  ZIP-Archivs hat keine Git-Historie – dann bleibt das Symbol wirkungslos und
+  meldet das auch).
+- **Lokale Änderungen** im Projektordner brechen das Update bewusst ab, statt
+  sie zu überschreiben.
+- Der Dienst hängt am **Docker-Socket** des Hosts. Das entspricht
+  Administratorrechten auf diesem Rechner – deshalb ist der Port fest an
+  `127.0.0.1` gebunden. Auf einem Server, auf den mehrere Leute Zugriff
+  haben, sollte der `updater`-Block aus der `docker-compose.yml` entfernt
+  werden; die Oberfläche blendet das Symbol dann automatisch aus.
+- Der `updater` baut sich **nicht selbst** neu (er führt das Update ja gerade
+  aus). Sein Code liegt deshalb als Bind-Mount unter `/app` – Änderungen an
+  `updater.php`/`update.sh` sind nach dem nächsten Update sofort wirksam.
+  Nur wenn sich sein *Dockerfile* ändert, ist einmalig ein
+  `docker compose up -d --build updater` von Hand nötig.
+
+---
+
 ## Automatisch neu bauen nach `git pull`
 
 Ein mitgelieferter Git-Hook (`.githooks/post-merge`) baut den Stack nach

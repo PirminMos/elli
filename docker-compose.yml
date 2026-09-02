@@ -42,6 +42,35 @@ services:
       db:
         condition: service_healthy
 
+  # Update-Dienst: prueft auf neue Versionen bei GitHub und baut auf Zuruf
+  # aus der Weboberflaeche heraus den web-Container neu ("Update"-Symbol
+  # neben dem Versionshinweis).
+  #
+  # Er braucht dafuer zwei Dinge:
+  #   - den Docker-Socket des Hosts (um Images zu bauen und Container zu
+  #     ersetzen) -> das entspricht Administratorrechten auf diesem Rechner
+  #   - das Projektverzeichnis unter /repo (git pull + Build-Kontext)
+  # Deshalb ist der Port bewusst nur an 127.0.0.1 gebunden: erreichbar nur
+  # von diesem Rechner, nicht aus dem Netz. Wer das nicht moechte, entfernt
+  # diesen Block – die Oberflaeche blendet das Update-Symbol dann aus.
+  updater:
+    build:
+      context: .
+      dockerfile: docker/updater/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/repo
+      # Update-Dienst selbst aus dem Projekt laden, damit Aenderungen daran
+      # mit dem naechsten Update wirksam werden (der Container wird beim
+      # Update nicht ersetzt – er fuehrt es ja gerade aus).
+      - ./docker/updater:/app:ro
+    environment:
+      REPO_DIR: /repo
+      STATE_DIR: /state
+
   # Automatische DB-Sicherung im Hintergrund. Laeuft still mit, schreibt
   # rotierende Dumps nach ./backups. Zum Deaktivieren diesen Block entfernen.
   backup:

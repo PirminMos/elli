@@ -143,12 +143,37 @@ mitstarten). Du musst nur noch den Browser auf `http://localhost:8080`
 
 ### elli aktualisieren (neue Version holen)
 
+**Der einfache Weg – direkt in elli:**
+
+Unten auf der Startseite steht „Version vom …", daneben ein rundes
+Pfeil-Symbol **⟳**. Färbt es sich **grün**, liegt eine neue Version bereit.
+
+1. Auf das **⟳** klicken. elli zeigt, was sich geändert hat.
+2. **„Jetzt aktualisieren"** klicken.
+3. Ein Fenster zeigt den Fortschritt (Dateien holen, Programm bauen,
+   neu starten). Das dauert je nach Rechner ein paar Minuten – währenddessen
+   ist die Bedienung gesperrt, damit nichts durcheinandergerät.
+4. Ist alles fertig, lädt elli von selbst neu. Fertig.
+
+Deine Daten bleiben dabei unangetastet: Datenbank und Backups werden beim
+Update nicht angefasst.
+
+> Das ⟳-Symbol erscheint nur, wenn der Update-Dienst mitläuft (er startet
+> zusammen mit elli). Fehlt es, geht es weiterhin von Hand:
+
+**Der Weg von Hand:**
+
 1. In **GitHub Desktop** oben auf **„Fetch origin"** klicken. Wenn es
    danach **„Pull origin"** anzeigt, dieses klicken (holt die neue Version).
 2. Danach in der PowerShell im elli-Ordner:
    ```powershell
    docker compose up -d --build
    ```
+
+> Wenn das Update abbricht mit dem Hinweis auf **„lokale Änderungen"**:
+> Dann wurden im elli-Ordner Dateien verändert. elli überschreibt sie nicht
+> von allein. In dem Fall die Änderungen in GitHub Desktop rückgängig machen
+> (oder Bescheid geben) und das Update erneut starten.
 
 ---
 
