@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "0911ade",
+      "hash": "176cb77",
+      "date": "2026-09-02",
+      "subject": "Feature: Endzeitpunkt im Plan-Modal eingeben statt Dauer"
+    },
+    {
+      "hash": "6bdb053",
       "date": "2026-09-02",
       "subject": "Feature: Zweit-/Drittberuf je Zweitkraft, Entgendern + \"Maennlich\"-Opt-in"
     },

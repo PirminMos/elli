@@ -1866,23 +1866,11 @@
                          @change="updateTimeFromUnits">
                 </div>
               </div>
-              <div v-if="selectedUniqueKey.startsWith('a')" class="input-group">
-                <div class="time-input-block">
-                  <label>Dauer:</label>
-                  <input type="number"
-                         :value="tempDauer"
-                         placeholder="in Minuten"
-                         @input="updateEndeByMinutes($event.target.value)"
-                         class="glass-input-time">
-                </div>
-              </div>
               <div class="input-group">
                 <div class="time-input-block">
                   <label>Ende:</label>
-                  <div class="glass-input-time readonly-time"
-                       :style="{height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}">
-                    {{ lehrerPlanForm.ende || '--:--' }}
-                  </div>
+                  <input type="time" v-model="lehrerPlanForm.ende" class="glass-input-time"
+                         @change="updateStundenFromEnde">
                 </div>
               </div>
             </div>
@@ -1919,7 +1907,7 @@
     </div>
   </transition>
 
-  <!-- Eigenes Modal für den Diensteinsatzplan (Zweitkräfte): nur Raum, Aktivität, Beginn, Dauer, Ende -->
+  <!-- Eigenes Modal für den Diensteinsatzplan (Zweitkräfte): nur Raum, Aktivität, Beginn, Ende -->
   <transition name="fade">
     <div v-if="showDienstPlanModal" class="modal-overlay" @click="showDienstPlanModal = false">
       <div class="modal-content glass-modal" @click.stop>
@@ -1991,21 +1979,9 @@
               </div>
               <div class="input-group">
                 <div class="time-input-block">
-                  <label>Dauer:</label>
-                  <input type="number"
-                         :value="tempDauer"
-                         placeholder="in Minuten"
-                         @input="updateEndeByMinutes($event.target.value)"
-                         class="glass-input-time">
-                </div>
-              </div>
-              <div class="input-group">
-                <div class="time-input-block">
                   <label>Ende:</label>
-                  <div class="glass-input-time readonly-time"
-                       :style="{height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}">
-                    {{ lehrerPlanForm.ende || '--:--' }}
-                  </div>
+                  <input type="time" v-model="lehrerPlanForm.ende" class="glass-input-time"
+                         @change="updateStundenFromEnde">
                 </div>
               </div>
             </div>
@@ -5306,7 +5282,6 @@ export default {
       einheiten_kv: 0,
       einheiten_diff: 0, // Wichtig für den Slider-Startwert
       typ: 'a',
-      tempDauer: 45,
       stundenAuswahl: 1,
       openDropupId: null,
       klassenVerfuegbarkeiten: [],
@@ -6299,8 +6274,9 @@ export default {
       return Math.round(255 * f).toString(16).padStart(2, '0');
     },
     updateTimeFromUnits(input = null) {
-      // Nur rechnen, wenn es ein Fach (Typ 'f') ist und wir eine Startzeit haben
-      if (!this.selectedUniqueKey || !this.lehrerPlanForm.start) {
+      // Nur rechnen, wenn es ein Fach (Typ 'f') ist und wir eine Startzeit haben.
+      // Bei Aktivitäten gibt der Nutzer das Ende selbst ein, da wird nichts überschrieben.
+      if (!this.selectedUniqueKey || !this.selectedUniqueKey.startsWith('f') || !this.lehrerPlanForm.start) {
         return;
       }
 
@@ -6308,7 +6284,7 @@ export default {
       const [hours, minutes] = this.lehrerPlanForm.start.split(':').map(Number);
 
       // 2. Gesamte Minuten berechnen (Startzeit + Einheiten * 45)
-      const dauerInMinuten = this.selectedUniqueKey.startsWith('f') ? (this.stundenAuswahl || input || 1) * 45 : this.tempDauer;
+      const dauerInMinuten = (this.stundenAuswahl || input || 1) * 45;
       let totalMinutes = hours * 60 + minutes + dauerInMinuten;
 
       // 3. Zurückrechnen in Stunden und Minuten (Modulo 24 für Tagesübergang)
@@ -6316,6 +6292,22 @@ export default {
       const endMinutes = totalMinutes % 60;
 
       this.lehrerPlanForm.ende = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+    },
+
+    // Gegenstück zum Slider: aus einem eingegebenen Ende die Anzahl der UE ableiten.
+    // Nur für Fächer relevant, weil beim Speichern pro UE ein 45-Minuten-Termin entsteht.
+    updateStundenFromEnde() {
+      if (!this.selectedUniqueKey || !this.selectedUniqueKey.startsWith('f')) return;
+      if (!this.lehrerPlanForm.start || !this.lehrerPlanForm.ende) return;
+
+      const [h1, m1] = this.lehrerPlanForm.start.split(':').map(Number);
+      const [h2, m2] = this.lehrerPlanForm.ende.split(':').map(Number);
+      const dauer = (h2 * 60 + m2) - (h1 * 60 + m1);
+      if (dauer <= 0) return;
+
+      this.stundenAuswahl = Math.max(1, Math.min(10, Math.round(dauer / 45)));
+      // Ende auf das volle UE-Raster ziehen, damit die Anzeige zeigt, was gespeichert wird
+      this.updateTimeFromUnits();
     },
 
     // WICHTIG: Wenn du ein Fach im Grid anklickst, musst du diese Methode ebenfalls triggern
@@ -6873,7 +6865,7 @@ export default {
 
       console.log("benötigte Räume 2", raeume);
 
-      //Dauer berechnen
+      // UE-Anzahl aus der mitgebrachten Zeitspanne ableiten (nur Fächer)
       if (fullData.start && fullData.ende) {
         const [h1, m1] = fullData.start.split(':').map(Number);
         const [h2, m2] = fullData.ende.split(':').map(Number);
@@ -6881,8 +6873,9 @@ export default {
         const startTotal = h1 * 60 + m1;
         const endeTotal = h2 * 60 + m2;
 
-        this.tempDauer = fullData.aktivitaet_id ? endeTotal - startTotal : 45;
-        this.stundenAuswahl = fullData.fach_id ? ((endeTotal - startTotal) / 45).toFixed(0) : 1;
+        this.stundenAuswahl = fullData.fach_id
+            ? Math.max(1, Math.min(10, Math.round((endeTotal - startTotal) / 45)))
+            : 1;
       }
 
       this.lehrerPlanForm = {
@@ -6910,6 +6903,8 @@ export default {
 
       console.log('this.lehrerPlanForm', this.lehrerPlanForm);
 
+      this.selectedUniqueKey = this.lehrerPlanForm.fach_id ? 'f-' + this.lehrerPlanForm.fach_id : 'a-' + this.lehrerPlanForm.aktivitaet_id;
+
       if (dragMode === 'move' && fullData) {
         //hier stand mal Oriignal
         const isCopy = event.ctrlKey;
@@ -6923,12 +6918,10 @@ export default {
         if (type === 'f') {
           this.updateTimeFromUnits();
         } else {
-          // Standardzeit für Aktivitäten, falls gewünscht
+          // Standardzeit für Aktivitäten – kann im Modal frei geändert werden
           this.lehrerPlanForm.ende = '08:45';
         }
       }
-
-      this.selectedUniqueKey = this.lehrerPlanForm.fach_id ? 'f-' + this.lehrerPlanForm.fach_id : 'a-' + this.lehrerPlanForm.aktivitaet_id;
 
       // Diensteinsatzplan bekommt sein eigenes, schlankeres Modal
       if (this.activeCategory === 'diensteinsatzplan') {
@@ -6936,17 +6929,6 @@ export default {
       } else {
         this.showLehrerPlanModal = true;
       }
-    },
-    updateEndeByMinutes(minuten) {
-      this.tempDauer = minuten; // Lokal speichern für die Anzeige
-      if (!this.lehrerPlanForm.start) return;
-
-      const [h, m] = this.lehrerPlanForm.start.split(':').map(Number);
-      const gesamt = h * 60 + m + parseInt(minuten || 0);
-
-      this.lehrerPlanForm.ende =
-          String(Math.floor(gesamt / 60) % 24).padStart(2, '0') + ':' +
-          String(gesamt % 60).padStart(2, '0');
     },
     editLehrerAssignment(termin) {
       // 1. Tiefe Kopie des Objekts erstellen, um die Originaldaten im Plan nicht sofort zu manipulieren
@@ -6959,17 +6941,13 @@ export default {
       this.selectedUniqueKey = this.lehrerPlanForm.aktivitaet_id ? 'a-' + this.lehrerPlanForm.aktivitaet_id :
           'f-' + this.lehrerPlanForm.fach_id;
 
-      if (this.selectedUniqueKey.startsWith('a')) {
-        //Dauer berechnen
+      if (this.selectedUniqueKey.startsWith('f')) {
+        // UE-Anzahl aus der gespeicherten Zeitspanne ableiten
         const [h1, m1] = this.lehrerPlanForm.start.split(':').map(Number);
         const [h2, m2] = this.lehrerPlanForm.ende.split(':').map(Number);
 
-        const startTotal = h1 * 60 + m1;
-        const endeTotal = h2 * 60 + m2;
-
-        this.tempDauer = endeTotal - startTotal;
-      } else {
-        this.stundenAuswahl = 1;
+        const dauer = (h2 * 60 + m2) - (h1 * 60 + m1);
+        this.stundenAuswahl = dauer > 0 ? Math.max(1, Math.min(10, Math.round(dauer / 45))) : 1;
       }
 
       this.lehrerPlanForm.dragMode = 'edit';
