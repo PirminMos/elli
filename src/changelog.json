@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "887af43",
+      "hash": "a2f90ef",
+      "date": "2026-09-02",
+      "subject": "Doku: Lokalen .claude-Ordner ignorieren"
+    },
+    {
+      "hash": "badf0d9",
       "date": "2026-09-02",
       "subject": "Fix: Update pruefte auch unversionierte Dateien"
     },
