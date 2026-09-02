@@ -2162,13 +2162,13 @@ if ($action === 'export_schuelerstundenplan') {
         ");
         $stmtT->execute([$klasse_id]);
 
-        // Nur den Nachnamen verwenden = letzter Namensteil ("Vorname Nachname");
-        // ein evtl. Titel nach Komma wird vorher entfernt.
+        // Nur den Nachnamen verwenden = erster Namensteil, denn Namen werden als
+        // "Nachname Vorname" erfasst; ein evtl. Titel nach Komma faellt vorher weg.
         $nachname = function ($name) {
             $name = trim(preg_replace('/,.*/', '', (string)$name));
             $parts = preg_split('/\s+/', $name, -1, PREG_SPLIT_NO_EMPTY);
             if (!$parts) return trim((string)$name);
-            return $parts[count($parts) - 1];
+            return $parts[0];
         };
 
         // Lehrer je (Tag, Startzeit) sammeln – mehrere Termine (z.B. äußere

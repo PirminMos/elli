@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "cc9a714",
+      "hash": "5441577",
+      "date": "2026-09-02",
+      "subject": "Aendere Namensreihenfolge auf \"Nachname Vorname\""
+    },
+    {
+      "hash": "684cec5",
       "date": "2026-09-02",
       "subject": "Feature: Ermaessigung als Gleitkommazahl (Erst- und Zweitkraft)"
     },

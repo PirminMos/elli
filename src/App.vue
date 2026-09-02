@@ -404,8 +404,8 @@
 
         <div class="editor-grid">
           <div class="input-group">
-            <label>Vollständiger Name:</label>
-            <input v-model="currentErstkraft.name" type="text" placeholder="z.B. Max Mustermann">
+            <label>Vollständiger Name (Nachname Vorname):</label>
+            <input v-model="currentErstkraft.name" type="text" placeholder="z.B. Mustermann Max">
           </div>
 
           <div class="input-group">
@@ -494,8 +494,8 @@
 
         <div class="editor-grid">
           <div class="input-group">
-            <label>Vollständiger Name:</label>
-            <input v-model="currentZweitkraft.name" type="text" placeholder="z.B. Maria Muster">
+            <label>Vollständiger Name (Nachname Vorname):</label>
+            <input v-model="currentZweitkraft.name" type="text" placeholder="z.B. Muster Maria">
           </div>
           <div class="input-group">
             <label>Kürzel:</label>
@@ -1399,8 +1399,8 @@
 
             <div class="modal-body">
               <div class="input-floating-group">
-                <label>Vollständiger Name</label>
-                <input v-model="editingPerson.name" placeholder="z.B. Max Mustermann" class="glass-input-large"
+                <label>Vollständiger Name (Nachname Vorname)</label>
+                <input v-model="editingPerson.name" placeholder="z.B. Mustermann Max" class="glass-input-large"
                        @keyup.enter="savePerson">
               </div>
               <div class="input-group">
