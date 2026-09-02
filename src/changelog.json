@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "502c1ef",
+      "hash": "40f95a1",
+      "date": "2026-09-02",
+      "subject": "Aendere Lehrer-Stundentafel: Anzeige in Schulstunden"
+    },
+    {
+      "hash": "26996ee",
       "date": "2026-09-02",
       "subject": "Feature: Eigenes Symbol fuer Aktivitaeten - Zweitkraft"
     },

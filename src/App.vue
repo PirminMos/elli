@@ -1113,7 +1113,7 @@
         <aside class="timetable-sidebar glass">
           <div class="sidebar-header">
             <div class="tafel-title-row">
-              <h3>Stundentafel in h</h3>
+              <h3>Stundentafel in Schulstunden</h3>
               <button class="template-btn-inline" @click="openTemplateModal" title="Vorlage anwenden">Template</button>
             </div>
             <br>
@@ -1136,22 +1136,22 @@
                     <div class="fach-stats-badge"
                          :style="{
                        backgroundColor: item.ist_klassenverbund === item.soll_klassenverbund ? '#193217' : item.ist_klassenverbund > item.soll_klassenverbund ? '#3e2023' : '#474322'}">
-                      <span class="ist-val">{{ item.ist_klassenverbund }}</span>
+                      <span class="ist-val">{{ schulstunden(item.ist_klassenverbund) }}</span>
                       <span class="sep">/</span>
-                      <span class="soll-val">{{ item.soll_klassenverbund }}</span>
+                      <span class="soll-val">{{ schulstunden(item.soll_klassenverbund) }}</span>
                     </div>
                     <div class="fach-stats-badge"
                          :style="{
                        backgroundColor: item.ist_differenzierung === item.soll_differenzierung ? '#193217' : item.ist_differenzierung > item.soll_differenzierung ? '#3e2023' : '#474322'}">
-                      <span class="ist-val">{{ item.ist_differenzierung }}</span>
+                      <span class="ist-val">{{ schulstunden(item.ist_differenzierung) }}</span>
                       <span class="sep">/</span>
-                      <span class="soll-val">{{ item.soll_differenzierung }}</span>
+                      <span class="soll-val">{{ schulstunden(item.soll_differenzierung) }}</span>
                     </div>
                     <div class="fach-stats-badge"
                          :style="{
                        backgroundColor: (item.ist_klassenverbund + item.ist_differenzierung) === (item.soll_differenzierung + item.soll_klassenverbund) ? '#193217' :
                        (item.ist_klassenverbund+item.ist_differenzierung) > (item.soll_differenzierung + item.soll_klassenverbund) ? '#3e2023' : '#474322'}">
-                      <span class="soll-val">{{ item.soll_differenzierung + item.soll_klassenverbund }}</span>
+                      <span class="soll-val">{{ schulstunden(item.soll_differenzierung + item.soll_klassenverbund) }}</span>
                     </div>
                   </div>
                 </div>
@@ -1162,8 +1162,8 @@
               <div class="stats-header">
                 <span class="stats-label">Gesamt</span>
                 <div class="stats-badges">
-                  <span class="badge ist">Ist: {{ totalIst_Lehrer }}</span>
-                  <span class="badge soll">Soll: {{ totalSoll_Lehrer }}</span>
+                  <span class="badge ist">Ist: {{ schulstunden(totalIst_Lehrer) }}</span>
+                  <span class="badge soll">Soll: {{ schulstunden(totalSoll_Lehrer) }}</span>
                 </div>
               </div>
 
@@ -6744,6 +6744,16 @@ export default {
       this.currentActivity.kraft_typ = typ === 'erst' ? 'erst' : 'zweit';
       if (this.currentActivity.kraft_typ === 'erst') this.currentActivity.einsatzort = '';
       this.activeDropdown = null;
+    },
+    // Zeitstunden (60 Min) als Schulstunden (45 Min) anzeigen. Gespeichert
+    // wird weiterhin in Zeitstunden – nur die Anzeige rechnet um. Gerundet
+    // wird immer auf, auf höchstens zwei Nachkommastellen.
+    schulstunden(wert) {
+      const roh = (parseFloat(wert) || 0) / 0.75;
+      // Fließkomma-Rauschen glätten, sonst würde aus 2.25 h (= 3 Schulstunden)
+      // über 3.0000000000000004 beim Aufrunden 3.01 werden.
+      const geglaettet = Math.round(roh * 1e6) / 1e6;
+      return Number((Math.ceil(geglaettet * 100) / 100).toFixed(2));
     },
     // ISO-Datum (JJJJ-MM-TT) als TT.MM.JJJJ ausgeben.
     formatiereDatum(iso) {
