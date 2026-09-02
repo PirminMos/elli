@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "a2f90ef",
+      "hash": "314bce3",
+      "date": "2026-09-02",
+      "subject": "Fix: Zeilenenden fuer alle Textdateien normalisieren"
+    },
+    {
+      "hash": "b1cab4c",
       "date": "2026-09-02",
       "subject": "Doku: Lokalen .claude-Ordner ignorieren"
     },

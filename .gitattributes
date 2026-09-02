@@ -1,3 +1,10 @@
+# Grundregel: Textdateien normalisiert speichern (im Repo immer LF, im
+# Arbeitsverzeichnis je nach System). Ohne diese Zeile gelten Dateien ohne
+# passende Endung (.gitignore, Dockerfile ...) als "unbekannt": Git im
+# Linux-Container haelt sie dann gegenueber einem Windows-Arbeitsverzeichnis
+# faelschlich fuer geaendert – und das Update aus der Oberflaeche scheitert.
+* text=auto
+
 # Shell-Skripte und Git-Hooks MUESSEN LF-Zeilenenden haben, sonst schlagen
 # sie auf Linux mit "bad interpreter: /bin/sh^M" fehl. Unabhaengig von den
 # Windows-Autocrlf-Einstellungen des jeweiligen Clones erzwingen.
