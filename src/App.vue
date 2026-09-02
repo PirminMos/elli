@@ -81,7 +81,6 @@
           <textarea v-model="schule.adresse.name" placeholder="Name der Schule"></textarea>
           <textarea v-model="schule.adresse.strasse" placeholder="Straße"></textarea>
           <textarea v-model="schule.adresse.stadt" placeholder="Postleitzahl & Ort"></textarea>
-          <button class="save-btn" @click="saveAddressManual">Adresse speichern</button>
         </div>
       </div>
     </transition>
@@ -8970,6 +8969,9 @@ export default {
         body: JSON.stringify({schluessel: 'nutzername', wert: this.nutzerName})
       });
       let p2 = Promise.resolve();
+      // Die Schuladresse haengt ebenfalls am Schuljahr und wird zusammen mit
+      // den uebrigen Einstellungen geschrieben (frueher eigener Knopf).
+      let p3 = Promise.resolve();
       if (this.currentSchuljahrId) {
         p2 = fetch(`${API_URL}?action=save_schuljahr_meta`, {
           method: 'POST',
@@ -8983,19 +8985,7 @@ export default {
             schuljahr_ende: this.schuljahrEnde
           })
         });
-      }
-      return Promise.all([p1, p2])
-        .then(() => { this.showStatus('Einstellungen gespeichert'); return this.fetchSchuljahre(); })
-        .catch(e => console.error('Fehler beim Speichern der Einstellungen:', e));
-    },
-    async saveAddressManual() {
-      if (!this.currentSchuljahrId) {
-        this.elliAlert("Bitte wählen Sie zuerst ein Schuljahr aus.");
-        return;
-      }
-
-      try {
-        const response = await fetch(`${API_URL}?action=save_address`, {
+        p3 = fetch(`${API_URL}?action=save_address`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
@@ -9003,18 +8993,10 @@ export default {
             adresse: this.schule.adresse
           })
         });
-        const resData = await response.json();
-        if (resData.success) {
-          this.showStatus("Adresse erfolgreich gespeichert!");
-          // Optional: Schuljahre neu laden, damit die Daten im State aktuell sind
-          await this.fetchSchuljahre();
-        } else {
-          this.showStatus("Fehler: " + resData.error, "error");
-        }
-      } catch (e) {
-        console.error(e);
-        this.showStatus("Server-Verbindungsfehler", "error");
       }
+      return Promise.all([p1, p2, p3])
+        .then(() => { this.showStatus('Einstellungen gespeichert'); return this.fetchSchuljahre(); })
+        .catch(e => console.error('Fehler beim Speichern der Einstellungen:', e));
     },
     async saveNutzerName() {
       // Wir speichern den Namen in der DB

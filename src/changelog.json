@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "af00c68",
+      "hash": "144fff1",
+      "date": "2026-09-02",
+      "subject": "Aendere Adresse: kein eigener Speichern-Knopf mehr"
+    },
+    {
+      "hash": "6edc520",
       "date": "2026-09-02",
       "subject": "Fix: \"1 Aenderung\" statt \"1 Aenderungen\" im Update-Hinweis"
     },
