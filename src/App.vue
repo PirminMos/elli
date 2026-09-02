@@ -2127,15 +2127,25 @@
 
           <!-- 6. Update verfügbar -->
           <template v-else>
-            <p class="update-info">
-              Es {{ updater.pruefung.anzahl === 1 ? 'liegt eine neue Änderung' : 'liegen ' + updater.pruefung.anzahl + ' neue Änderungen' }} bereit:
+            <!-- 6a. Keine neuen Änderungen, aber die laufende Version ist älter
+                 als der Projektordner (z.B. schon gepullt, nur nie neu gebaut) -->
+            <p v-if="updater.pruefung.nurNeuBauen" class="update-info">
+              Der Projektordner ist auf dem neuesten Stand, die laufende Anwendung
+              aber noch nicht – sie wurde vor der letzten Änderung gebaut.
+              Ein Klick baut sie neu.
             </p>
-            <ul class="changelog-list update-liste">
-              <li v-for="c in updater.pruefung.commits" :key="c.hash" class="changelog-item">
-                <span class="changelog-date">{{ formatiereDatum(c.date) }}</span>
-                <span class="changelog-subject">{{ c.subject }}</span>
-              </li>
-            </ul>
+            <!-- 6b. Neue Änderungen von GitHub -->
+            <template v-else>
+              <p class="update-info">
+                Es {{ updater.pruefung.anzahl === 1 ? 'liegt eine neue Änderung' : 'liegen ' + updater.pruefung.anzahl + ' neue Änderungen' }} bereit:
+              </p>
+              <ul class="changelog-list update-liste">
+                <li v-for="c in updater.pruefung.commits" :key="c.hash" class="changelog-item">
+                  <span class="changelog-date">{{ formatiereDatum(c.date) }}</span>
+                  <span class="changelog-subject">{{ c.subject }}</span>
+                </li>
+              </ul>
+            </template>
             <p v-if="!updater.pruefung.sauber" class="update-fehler">
               Achtung: Im Projektordner liegen eigene Änderungen. Das Update würde sie
               überschreiben und bricht deshalb ab.
@@ -5451,6 +5461,7 @@ export default {
           lokal: '',
           entfernt: '',
           sauber: true,
+          nurNeuBauen: false,   // aktuell im Ordner, aber laufende Version älter
           meldung: ''
         }
       },
@@ -5505,6 +5516,7 @@ export default {
     // Beschriftung des Update-Symbols (Tooltip).
     updateTitel() {
       if (this.updater.state === 'laeuft') return 'Update läuft …';
+      if (this.updater.pruefung.nurNeuBauen) return 'Laufende Version ist älter als der Projektstand';
       if (this.updater.pruefung.updateVerfuegbar) {
         const n = this.updater.pruefung.anzahl;
         return `Update verfügbar (${n} ${n === 1 ? 'Änderung' : 'Änderungen'})`;

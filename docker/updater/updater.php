@@ -118,7 +118,46 @@ function lauf(string $logDatei, string $pidDatei): array
     return ['state' => $state, 'schritt' => $schritt, 'log' => $zeilen, 'fehler' => $fehler];
 }
 
-/** Lokalen Stand mit GitHub vergleichen. */
+/**
+ * Laeuft die Anwendung mit einem aelteren Stand als dem im Projektordner?
+ *
+ * Der Vergleich Projektordner<->GitHub allein genuegt nicht: wer selbst
+ * committet (oder von Hand gepullt hat, ohne neu zu bauen), hat einen
+ * aktuellen Ordner und trotzdem einen veralteten Container. Deshalb den
+ * Erstellungszeitpunkt des laufenden web-Containers gegen den Zeitpunkt des
+ * aktuellen Commits halten.
+ */
+function containerVeraltet(string $repo): bool
+{
+    $projekt = trim((string)@shell_exec(
+        'docker inspect "$(hostname)" --format \'{{index .Config.Labels "com.docker.compose.project"}}\' 2>/dev/null'
+    ));
+    if ($projekt === '') $projekt = 'elli';
+
+    $id = trim((string)@shell_exec(
+        'docker ps -q'
+        . ' --filter ' . escapeshellarg('label=com.docker.compose.project=' . $projekt)
+        . ' --filter ' . escapeshellarg('label=com.docker.compose.service=web')
+        . ' 2>/dev/null'
+    ));
+    if ($id === '') return false;
+    $id = strtok($id, "\n");
+
+    $erstellt = trim((string)@shell_exec(
+        'docker inspect ' . escapeshellarg($id) . ' --format \'{{.Created}}\' 2>/dev/null'
+    ));
+    $erstelltZeit = $erstellt !== '' ? strtotime($erstellt) : 0;
+    if (!$erstelltZeit) return false;
+
+    $commitZeit = '';
+    git($repo, ['log', '-1', '--format=%ct', 'HEAD'], $commitZeit);
+    $commitZeit = (int)trim($commitZeit);
+    if (!$commitZeit) return false;
+
+    return $erstelltZeit < $commitZeit;
+}
+
+/** Lokalen Stand mit GitHub und mit der laufenden Version vergleichen. */
 function pruefen(string $repo): array
 {
     $ergebnis = [
@@ -129,6 +168,7 @@ function pruefen(string $repo): array
         'lokal'            => '',
         'entfernt'         => '',
         'sauber'           => true,
+        'nurNeuBauen'      => false,
         'meldung'          => '',
     ];
 
@@ -176,12 +216,17 @@ function pruefen(string $repo): array
         $commits[] = ['hash' => $teile[0], 'date' => $teile[1], 'subject' => $teile[2]];
     }
 
+    // Auch ohne neue Commits kann ein Update noetig sein: naemlich dann, wenn
+    // die laufende Anwendung aelter ist als der Stand im Projektordner.
+    $veraltet = containerVeraltet($repo);
+
     $ergebnis['moeglich']         = true;
     $ergebnis['lokal']            = $lokal;
     $ergebnis['entfernt']         = $entfernt;
     $ergebnis['anzahl']           = (int)$anzahl;
     $ergebnis['commits']          = $commits;
-    $ergebnis['updateVerfuegbar'] = (int)$anzahl > 0;
+    $ergebnis['nurNeuBauen']      = (int)$anzahl === 0 && $veraltet;
+    $ergebnis['updateVerfuegbar'] = (int)$anzahl > 0 || $veraltet;
 
     return $ergebnis;
 }

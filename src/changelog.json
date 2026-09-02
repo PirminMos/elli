@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "144fff1",
+      "hash": "1dd4438",
+      "date": "2026-09-02",
+      "subject": "Fix: Update-Pruefung sieht auch veraltete laufende Version"
+    },
+    {
+      "hash": "f615cef",
       "date": "2026-09-02",
       "subject": "Aendere Adresse: kein eigener Speichern-Knopf mehr"
     },
