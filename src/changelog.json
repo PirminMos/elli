@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "898557a",
+      "hash": "502c1ef",
+      "date": "2026-09-02",
+      "subject": "Feature: Eigenes Symbol fuer Aktivitaeten - Zweitkraft"
+    },
+    {
+      "hash": "b3ade78",
       "date": "2026-09-02",
       "subject": "Aendere Startseite: Update-Knopf beschriften, Aktivitaets-Hinweis raus"
     },

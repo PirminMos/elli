@@ -5268,6 +5268,9 @@ import {computed, ref} from "vue";
 const API_URL = import.meta.env.VITE_API_URL || '/api.php'
 
 import iconAktivitaet from '@/assets/icons/aktivitaet.svg'
+// Seestern für die Aktivitäten der Zweitkräfte – damit die beiden
+// Aktivitäts-Kacheln auf der Startseite auf einen Blick unterscheidbar sind.
+import iconAktivitaetZweitkraft from '@/assets/icons/aktivitaet-zweitkraft.svg'
 import iconErstkraft from '@/assets/icons/erstkraft.svg'
 import iconRaum from '@/assets/icons/raum.svg'
 import iconSchulfach from '@/assets/icons/schulfach.svg'
@@ -5339,7 +5342,7 @@ export default {
         },
         'aktivitaet-zweit': {
           plural: 'Aktivitäten – Zweitkraft',
-          icon: iconAktivitaet
+          icon: iconAktivitaetZweitkraft
         },
         'erstkraft': {
           plural: 'Erstkräfte',
