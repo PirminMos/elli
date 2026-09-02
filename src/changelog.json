@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "4e18014",
+      "hash": "136187a",
+      "date": "2026-09-02",
+      "subject": "Aendere Schuelerstundenplan: Legende einzeilig in 6,5 pt"
+    },
+    {
+      "hash": "6c6965b",
       "date": "2026-09-02",
       "subject": "Aendere Schuelerstundenplan: Legende unter die Stundentafel"
     },

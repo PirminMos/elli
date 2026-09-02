@@ -2367,10 +2367,10 @@ if ($action === 'export_schuelerstundenplan') {
             $wtRows[] = $trow($leer, 460);
         }
         $timetable = $tbl($gridWT, $wtRows);
-        // Legende gehoert unter die Stundentafel (rechte Spalte). Dort ist es
-        // schmal, deshalb zwei Zeilen statt einer breiten.
-        $legende = $para('1* Im Klassenverband', false, 18, 'left', 0)
-                 . $para('2** äußere Differenzierung', false, 18, 'left', 0);
+        // Legende gehoert unter die Stundentafel (rechte Spalte). Die ist nur
+        // 3786 twips (~6,7 cm bzw. ~185 pt) breit, deshalb 6,5 pt (sz 13):
+        // ~49 Zeichen * ~0,5 em ergeben rund 160 pt - passt in eine Zeile.
+        $legende = $para('1* Im Klassenverband   2** äußere Differenzierung', false, 13, 'left', 0);
 
         // --- Stundentafel (rechts) mit Bereichen: Pflichtfächer, Wahlpflichtbereich, Wahlfächer ---
         $SF = 1800; $S1 = 560; $S2 = 560; $SS = 700; $STW = $SF + $S1 + $S2 + $SS;
@@ -2414,9 +2414,9 @@ if ($action === 'export_schuelerstundenplan') {
         // Wahlpflichtbereich und Wahlfächer bekommen je genau eine Leerzeile;
         // der uebrige Platz geht an die Pflichtfächer.
         $emptyPflicht = 3; $emptyWahlpflicht = 1; $emptyWahlfaecher = 1;
-        // Zielhoehe = Wochenraster links, abzueglich der zwei Legendenzeilen,
-        // die jetzt unter der Stundentafel stehen.
-        $ttMin = 320 + max(1, count($raster)) * 460 - 400;
+        // Zielhoehe = Wochenraster links, abzueglich der einen Legendenzeile,
+        // die jetzt unter der Stundentafel steht.
+        $ttMin = 320 + max(1, count($raster)) * 460 - 200;
         $fixH  = 320 + 300 + 300 + count($tafel) * 280 + 300 + 300 + 300; // Titel,Kopf,Pflicht-Label,Fächer,Wahlpfl-Label,Wahlf-Label,Summe
         $rest = (int)floor(($ttMin - $fixH) / 300) - ($emptyPflicht + $emptyWahlpflicht + $emptyWahlfaecher);
         if ($rest > 0) $emptyPflicht += $rest;
