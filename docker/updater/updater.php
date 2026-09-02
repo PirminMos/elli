@@ -15,6 +15,7 @@
 $REPO  = getenv('REPO_DIR') ?: '/repo';
 $STATE = getenv('STATE_DIR') ?: '/state';
 $LOG   = $STATE . '/update.log';
+$PID   = $STATE . '/update.pid';
 $SKRIPT = '/app/update.sh';
 
 if (!is_dir($STATE)) @mkdir($STATE, 0777, true);
@@ -44,11 +45,25 @@ function git(string $repo, array $args, ?string &$ausgabe = null): int
     return $code;
 }
 
-/** Laeuft gerade ein Update-Skript? (siehe Kopie in /update: update-lauf.sh) */
-function laeuftUpdate(): bool
+/**
+ * Laeuft der gestartete Update-Prozess noch?
+ *
+ * Bewusst ueber die gemerkte PID und nicht ueber den Skriptnamen: ein Update
+ * tauscht unter Umstaenden diesen Dienst selbst aus, waehrend das Skript noch
+ * arbeitet – ein Namensmuster wuerde dann ins Leere greifen und einen
+ * laufenden Vorgang als Absturz melden.
+ */
+function laeuftUpdate(string $pidDatei): bool
 {
-    $treffer = trim((string)@shell_exec('pgrep -f "update-lauf.sh" 2>/dev/null'));
-    return $treffer !== '';
+    if (!is_file($pidDatei)) return false;
+    $pid = (int)trim((string)@file_get_contents($pidDatei));
+    if ($pid <= 0 || !is_dir('/proc/' . $pid)) return false;
+
+    // Beendete Kindprozesse bleiben als Zombie im Prozessbaum stehen (der
+    // eingebaute PHP-Server erntet sie nicht ab) – die zaehlen nicht.
+    $stat = (string)@file_get_contents('/proc/' . $pid . '/stat');
+    $nachName = strrchr($stat, ')');
+    return !($nachName !== false && preg_match('/^\)\s+Z/', $nachName));
 }
 
 /**
@@ -58,7 +73,7 @@ function laeuftUpdate(): bool
  * fertig  – letzter Lauf war erfolgreich
  * fehler  – letzter Lauf ist gescheitert (oder wurde abgebrochen)
  */
-function lauf(string $logDatei): array
+function lauf(string $logDatei, string $pidDatei): array
 {
     if (!is_file($logDatei)) {
         return ['state' => 'bereit', 'schritt' => '', 'log' => [], 'fehler' => ''];
@@ -83,10 +98,16 @@ function lauf(string $logDatei): array
         }
     }
 
-    // Kein Endezeichen, aber auch kein laufender Prozess -> abgebrochen.
-    if ($state === 'laeuft' && !laeuftUpdate()) {
-        $state = 'fehler';
-        $fehler = $fehler ?: 'Das Update wurde unerwartet beendet.';
+    // Kein Endezeichen und kein laufender Prozess: entweder wirklich
+    // abgestuerzt – oder der Dienst wurde zwischendurch neu gestartet und
+    // kennt die PID nicht mehr. Ein Protokoll, in das noch geschrieben wird,
+    // gilt deshalb weiter als laufend (Build-Schritte koennen lange schweigen).
+    if ($state === 'laeuft' && !laeuftUpdate($pidDatei)) {
+        $frisch = is_file($logDatei) && (time() - (int)@filemtime($logDatei)) < 600;
+        if (!$frisch) {
+            $state = 'fehler';
+            $fehler = $fehler ?: 'Das Update wurde unerwartet beendet.';
+        }
     }
 
     // Protokoll begrenzen: die letzten Zeilen sind die interessanten.
@@ -172,12 +193,12 @@ $post   = $_SERVER['REQUEST_METHOD'] === 'POST';
 switch ($pfad) {
     case '':
     case '/status':
-        echo json_encode(['dienst' => 'elli-updater'] + lauf($LOG), JSON_UNESCAPED_UNICODE);
+        echo json_encode(['dienst' => 'elli-updater'] + lauf($LOG, $PID), JSON_UNESCAPED_UNICODE);
         break;
 
     case '/pruefen':
         echo json_encode(
-            ['dienst' => 'elli-updater', 'pruefung' => pruefen($REPO)] + lauf($LOG),
+            ['dienst' => 'elli-updater', 'pruefung' => pruefen($REPO)] + lauf($LOG, $PID),
             JSON_UNESCAPED_UNICODE
         );
         break;
@@ -188,12 +209,13 @@ switch ($pfad) {
             echo json_encode(['error' => 'POST erwartet']);
             break;
         }
-        if (laeuftUpdate()) {
+        if (laeuftUpdate($PID)) {
             http_response_code(409);
             echo json_encode(['error' => 'Es laeuft bereits ein Update.']);
             break;
         }
         @unlink($LOG);
+        @unlink($PID);
         // Mit einer Kopie arbeiten: das Update aktualisiert unter Umstaenden
         // update.sh selbst, und die Shell liest ihr Skript waehrend des Laufs
         // haeppchenweise nach – eine Aenderung mittendrin waere fatal.
@@ -206,14 +228,19 @@ switch ($pfad) {
         // Im Hintergrund starten und sofort antworten – der Fortschritt wird
         // ueber /status abgeholt. Ohne nohup/& wuerde die Anfrage minutenlang
         // haengen und der eingebaute PHP-Server nichts anderes mehr annehmen.
-        exec('nohup sh ' . escapeshellarg($laufSkript) . ' >> ' . escapeshellarg($LOG) . ' 2>&1 &');
+        // PID merken – daran erkennt /status, ob der Vorgang noch laeuft.
+        $pid = trim((string)shell_exec(
+            'nohup sh ' . escapeshellarg($laufSkript) . ' >> ' . escapeshellarg($LOG) . ' 2>&1 & echo $!'
+        ));
+        @file_put_contents($PID, $pid);
         usleep(300000); // kurz warten, damit /status direkt "laeuft" meldet
-        echo json_encode(['gestartet' => true] + lauf($LOG), JSON_UNESCAPED_UNICODE);
+        echo json_encode(['gestartet' => true] + lauf($LOG, $PID), JSON_UNESCAPED_UNICODE);
         break;
 
     case '/quittieren':
         @unlink($LOG);
-        echo json_encode(['ok' => true] + lauf($LOG), JSON_UNESCAPED_UNICODE);
+        @unlink($PID);
+        echo json_encode(['ok' => true] + lauf($LOG, $PID), JSON_UNESCAPED_UNICODE);
         break;
 
     default:

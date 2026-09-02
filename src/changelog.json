@@ -2,7 +2,12 @@
   "generated": "2026-09-02",
   "commits": [
     {
-      "hash": "ccddfc1",
+      "hash": "c2a7627",
+      "date": "2026-09-02",
+      "subject": "Fix: Laufenden Update-Vorgang ueber die PID erkennen"
+    },
+    {
+      "hash": "96bf67e",
       "date": "2026-09-02",
       "subject": "Fix: Update-Skript aus einer Kopie starten"
     },
