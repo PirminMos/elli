@@ -3874,4 +3874,440 @@ if ($action === 'zweitkraft-einsatzorte') {
 }
 
 
+// ===========================================================================
+// GESAMTPLAN
+// ===========================================================================
+// Der Gesamtplan ist ein A3-Raster im Querformat. Je ausgewaehlter Zeile
+// entsteht ein Block aus 11 Excel-Zeilen (Arbeitsbeginn, 9 Schulstunden,
+// Arbeitsende), je Wochentag ein Block aus 9 Spalten (Stundennummer +
+// 8 Personenspalten). Welche Klassen/Faecher/Aktivitaeten als Zeilen
+// erscheinen - und welche davon zu einer Zeile zusammengefasst werden -
+// steht in gesamtplan_zeile / gesamtplan_zeile_eintrag.
+//
+// Ein Eintrag zeigt ueber (quelle, quelle_id) auf klassen, schulfach oder
+// aktivitaet. Eine Zeile mit einem Eintrag ist ein einzelner Posten, eine
+// Zeile mit mehreren Eintraegen die Gruppe (z.B. "MSH/MSD/HU").
+function elli_ensure_gesamtplan_tabellen(PDO $conn) {
+    $conn->exec("CREATE TABLE IF NOT EXISTS gesamtplan_zeile (
+        id           INT(11)      NOT NULL AUTO_INCREMENT,
+        schuljahr_id INT(11)      NOT NULL,
+        position     INT(11)      NOT NULL DEFAULT 0,
+        label        VARCHAR(100) NOT NULL,
+        label_rechts VARCHAR(100) DEFAULT NULL,
+        PRIMARY KEY (id),
+        KEY idx_gpz_schuljahr (schuljahr_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $conn->exec("CREATE TABLE IF NOT EXISTS gesamtplan_zeile_eintrag (
+        id        INT(11)     NOT NULL AUTO_INCREMENT,
+        zeile_id  INT(11)     NOT NULL,
+        quelle    VARCHAR(10) NOT NULL,
+        quelle_id INT(11)     NOT NULL,
+        PRIMARY KEY (id),
+        KEY idx_gpze_zeile (zeile_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+// Zeilen inkl. Eintraegen eines Schuljahres laden (fuer Auswahlseite und Export).
+function elli_gesamtplan_zeilen(PDO $conn, int $schuljahr_id): array {
+    $stmt = $conn->prepare("SELECT id, position, label, label_rechts
+                            FROM gesamtplan_zeile WHERE schuljahr_id = ?
+                            ORDER BY position ASC, id ASC");
+    $stmt->execute([$schuljahr_id]);
+    $zeilen = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if (!$zeilen) return [];
+
+    $ids = array_column($zeilen, 'id');
+    $in  = implode(',', array_fill(0, count($ids), '?'));
+    $stmtE = $conn->prepare("SELECT zeile_id, quelle, quelle_id
+                             FROM gesamtplan_zeile_eintrag WHERE zeile_id IN ($in) ORDER BY id ASC");
+    $stmtE->execute($ids);
+    $nach = [];
+    foreach ($stmtE->fetchAll(PDO::FETCH_ASSOC) as $e) {
+        $nach[(int)$e['zeile_id']][] = ['quelle' => $e['quelle'], 'id' => (int)$e['quelle_id']];
+    }
+    foreach ($zeilen as &$z) {
+        $z['id']        = (int)$z['id'];
+        $z['position']  = (int)$z['position'];
+        $z['eintraege'] = $nach[$z['id']] ?? [];
+    }
+    unset($z);
+    return $zeilen;
+}
+
+// --- AUSWAHLSEITE LADEN ----------------------------------------------------
+if ($action === 'get_gesamtplan') {
+    $schuljahr_id = isset($_GET['schuljahr_id']) ? (int)$_GET['schuljahr_id'] : 0;
+    if (!$schuljahr_id) { echo json_encode(['success' => false, 'error' => 'schuljahr_id fehlt']); exit; }
+
+    try {
+        elli_ensure_gesamtplan_tabellen($conn);
+        $liste = function ($sql) use ($conn, $schuljahr_id) {
+            $s = $conn->prepare($sql);
+            $s->execute([$schuljahr_id]);
+            $rows = $s->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as &$r) $r['id'] = (int)$r['id'];
+            unset($r);
+            return $rows;
+        };
+        echo json_encode([
+            'success'      => true,
+            'klassen'      => $liste("SELECT id, name FROM klassen   WHERE schuljahr_id = ? ORDER BY name ASC"),
+            'faecher'      => $liste("SELECT id, name, farbe FROM schulfach WHERE schuljahr_id = ? ORDER BY name ASC"),
+            'aktivitaeten' => $liste("SELECT id, name, kraft_typ FROM aktivitaet WHERE schuljahr_id = ? ORDER BY name ASC"),
+            'zeilen'       => elli_gesamtplan_zeilen($conn, $schuljahr_id),
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// --- AUSWAHL SPEICHERN -----------------------------------------------------
+if ($action === 'save_gesamtplan') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $schuljahr_id = (int)($data['schuljahr_id'] ?? 0);
+    if (!$schuljahr_id) { echo json_encode(['success' => false, 'error' => 'schuljahr_id fehlt']); exit; }
+
+    try {
+        elli_ensure_gesamtplan_tabellen($conn);
+        $conn->beginTransaction();
+
+        // Komplett ersetzen: die Reihenfolge steckt in position, nicht in den IDs,
+        // deshalb ist ein Neuschreiben einfacher (und korrekter) als ein Abgleich.
+        $alt = $conn->prepare("SELECT id FROM gesamtplan_zeile WHERE schuljahr_id = ?");
+        $alt->execute([$schuljahr_id]);
+        $altIds = $alt->fetchAll(PDO::FETCH_COLUMN);
+        if ($altIds) {
+            $in = implode(',', array_fill(0, count($altIds), '?'));
+            $conn->prepare("DELETE FROM gesamtplan_zeile_eintrag WHERE zeile_id IN ($in)")->execute($altIds);
+        }
+        $conn->prepare("DELETE FROM gesamtplan_zeile WHERE schuljahr_id = ?")->execute([$schuljahr_id]);
+
+        $insZ = $conn->prepare("INSERT INTO gesamtplan_zeile (schuljahr_id, position, label, label_rechts)
+                                VALUES (?, ?, ?, ?)");
+        $insE = $conn->prepare("INSERT INTO gesamtplan_zeile_eintrag (zeile_id, quelle, quelle_id)
+                                VALUES (?, ?, ?)");
+        $pos = 0;
+        foreach (($data['zeilen'] ?? []) as $z) {
+            $label = trim((string)($z['label'] ?? ''));
+            if ($label === '') continue;
+            $rechts = trim((string)($z['label_rechts'] ?? ''));
+            $insZ->execute([$schuljahr_id, $pos++, $label, $rechts !== '' ? $rechts : null]);
+            $zid = (int)$conn->lastInsertId();
+            foreach (($z['eintraege'] ?? []) as $e) {
+                $quelle = (string)($e['quelle'] ?? '');
+                $qid    = (int)($e['id'] ?? 0);
+                if ($qid <= 0 || !in_array($quelle, ['klasse', 'fach', 'aktivitaet'], true)) continue;
+                $insE->execute([$zid, $quelle, $qid]);
+            }
+        }
+
+        $conn->commit();
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// --- EXPORT ----------------------------------------------------------------
+if ($action === 'export_gesamtplan') {
+    $schuljahr_id = isset($_GET['schuljahr_id']) ? (int)$_GET['schuljahr_id'] : 0;
+    if (!$schuljahr_id) { echo json_encode(['success' => false, 'error' => 'schuljahr_id fehlt']); exit; }
+
+    ob_start();
+    try {
+        elli_ensure_gesamtplan_tabellen($conn);
+
+        $TAGE        = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
+        $STUNDEN     = 9;    // fixes Raster laut Vorgabe
+        $SLOTS       = 8;    // Personenspalten je Tag - mehr passen nicht aufs Blatt
+        $SPALTEN_TAG = 1 + $SLOTS;
+        $ZEILEN_BLOCK = 2 + $STUNDEN;  // Beginn + 9 Stunden + Ende
+        $BLOECKE_PRO_SEITE = 6;        // so viele sollen auf ein A3-Blatt
+
+        // Vertikales Budget. A3 ist 297 mm hoch; abzueglich Rand oben (0,7")
+        // und unten (0,3") bleiben rund 770 pt. Kopfzeile + 6 Bloecke muessen
+        // da hineinpassen, ohne sich auf Excels Breitenskalierung zu verlassen:
+        //   15 + 6 * (11 + 9*10,5 + 11) = 714 pt - passt auch bei 100 %.
+        // Wer hier dreht, dreht auch an den Schriftgroessen darunter mit.
+        $H_TAGKOPF = 15;      // Zeile mit den Wochentagen
+        $H_RAND    = 11;      // Arbeitsbeginn / Arbeitsende
+        $H_STUNDE  = 10.5;    // die 9 Schulstunden
+        $PT_TEXT   = 7;       // Kuerzel, Stundennummern, Beschriftungen
+        $PT_ZEIT   = 6;       // Uhrzeiten
+
+        // Referenzraster: 9 Schulstunden a 45 Minuten ab 08:00. Der Arbeitsbeginn
+        // ist laut Vorgabe vorerst fuer alle 08:00; das Arbeitsende leitet sich
+        // aus der letzten belegten Stunde ab.
+        $RASTER_START = 8 * 60;
+        $RASTER_DAUER = 45;
+
+        $zeilen = elli_gesamtplan_zeilen($conn, $schuljahr_id);
+        if (!$zeilen) {
+            ob_end_clean();
+            echo json_encode(['success' => false, 'error' => 'Für den Gesamtplan ist noch keine Zeile ausgewählt']);
+            exit;
+        }
+
+        // 1. Kraefte des Schuljahres (Kuerzel + Farben) einmal einsammeln
+        $kraefte = [];
+        foreach (['erst' => 'erstkraft', 'zweit' => 'zweitkraft'] as $typ => $tabelle) {
+            $s = $conn->prepare("SELECT id, name, kuerzel, farbe, textfarbe FROM $tabelle WHERE schuljahr_id = ?");
+            $s->execute([$schuljahr_id]);
+            foreach ($s->fetchAll(PDO::FETCH_ASSOC) as $k) {
+                $kuerzel = trim((string)$k['kuerzel']);
+                if ($kuerzel === '') {
+                    // Ohne Kuerzel behelfen wir uns mit den ersten Buchstaben des Namens.
+                    $kuerzel = mb_substr(trim((string)$k['name']), 0, 3);
+                }
+                $kraefte[$typ . '-' . (int)$k['id']] = [
+                    'typ'       => $typ,
+                    'kuerzel'   => $kuerzel,
+                    'farbe'     => $k['farbe'],
+                    'textfarbe' => $k['textfarbe'],
+                ];
+            }
+        }
+
+        // 2. Termine je Zeile einsammeln: welche Kraft belegt an welchem Tag
+        //    welche der 9 Stunden?
+        $stundenVonTermin = function ($t) use ($STUNDEN, $RASTER_START, $RASTER_DAUER) {
+            // stunden_id ist die 1-basierte Stundennummer. Fehlt sie (im Lehrer-
+            // und Diensteinsatzplan koennen Termine frei liegen), rechnen wir sie
+            // aus der Startzeit gegen das Referenzraster aus.
+            $von = null;
+            if ($t['stunden_id'] !== null && (int)$t['stunden_id'] >= 1) {
+                $von = (int)$t['stunden_id'];
+            } elseif (!empty($t['start'])) {
+                $min = (int)substr($t['start'], 0, 2) * 60 + (int)substr($t['start'], 3, 2);
+                $von = max(1, (int)floor(($min - $RASTER_START) / $RASTER_DAUER) + 1);
+            }
+            if ($von === null) return [];
+
+            $anzahl = 1;
+            if (!empty($t['start']) && !empty($t['ende'])) {
+                $a = (int)substr($t['start'], 0, 2) * 60 + (int)substr($t['start'], 3, 2);
+                $b = (int)substr($t['ende'],  0, 2) * 60 + (int)substr($t['ende'],  3, 2);
+                if ($b > $a) $anzahl = max(1, (int)round(($b - $a) / $RASTER_DAUER));
+            }
+            $out = [];
+            for ($i = 0; $i < $anzahl; $i++) {
+                $s = $von + $i;
+                if ($s >= 1 && $s <= $STUNDEN) $out[] = $s;
+            }
+            return $out;
+        };
+
+        foreach ($zeilen as &$zeile) {
+            $klassen = $faecher = $akts = [];
+            foreach ($zeile['eintraege'] as $e) {
+                if ($e['quelle'] === 'klasse')     $klassen[] = $e['id'];
+                elseif ($e['quelle'] === 'fach')   $faecher[] = $e['id'];
+                elseif ($e['quelle'] === 'aktivitaet') $akts[] = $e['id'];
+            }
+
+            $wo = []; $par = [];
+            foreach (['klassen_id' => $klassen, 'schulfach_id' => $faecher, 'aktivitaet_id' => $akts] as $spalte => $ids) {
+                if (!$ids) continue;
+                $wo[] = "t.$spalte IN (" . implode(',', array_fill(0, count($ids), '?')) . ")";
+                $par = array_merge($par, $ids);
+            }
+            $zeile['belegung'] = [];   // [tag][kraftKey] = [stunden]
+            if (!$wo) continue;
+
+            $sql = "SELECT t.tag, t.start, t.ende, t.stunden_id, tv.kraft_typ, tv.kraft_id
+                    FROM termin t
+                    JOIN termin_verantwortliche tv ON tv.termin_id = t.id
+                    WHERE (" . implode(' OR ', $wo) . ")";
+            $s = $conn->prepare($sql);
+            $s->execute($par);
+
+            foreach ($s->fetchAll(PDO::FETCH_ASSOC) as $t) {
+                $key = $t['kraft_typ'] . '-' . (int)$t['kraft_id'];
+                if (!isset($kraefte[$key])) continue;   // Kraft aus anderem Schuljahr
+                $tag = $t['tag'];
+                if (!in_array($tag, $TAGE, true)) continue;
+                foreach ($stundenVonTermin($t) as $st) {
+                    $zeile['belegung'][$tag][$key][$st] = true;
+                }
+            }
+        }
+        unset($zeile);
+
+        // 3. Arbeitsmappe aufbauen
+        $ss = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $ss->getDefaultStyle()->getFont()->setName('Comic Sans MS')->setSize($PT_TEXT);
+        $sheet = $ss->getActiveSheet();
+        $sheet->setTitle('Gesamtplan');
+
+        $spalte = function ($i) { return \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i); };
+        $argb = function ($hex, $fallback) {
+            $hex = ltrim(trim((string)$hex), '#');
+            return preg_match('/^[0-9a-fA-F]{6}$/', $hex) ? 'FF' . strtoupper($hex) : $fallback;
+        };
+
+        $SP_LETZTE = 1 + count($TAGE) * $SPALTEN_TAG + 1;   // A + 45 Tagesspalten + Beschriftung rechts
+        for ($c = 1; $c <= $SP_LETZTE; $c++) $sheet->getColumnDimension($spalte($c))->setWidth(5);
+
+        $MEDIUM = \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM;
+        $rahmen = function ($bereich) use ($sheet, $MEDIUM) {
+            $sheet->getStyle($bereich)->getBorders()->getOutline()->setBorderStyle($MEDIUM);
+        };
+        // Kopfzeile mit den Wochentagen - steht oben und (wiederholt) unten.
+        $kopfzeile = function ($r) use ($sheet, $spalte, $TAGE, $SPALTEN_TAG, $rahmen, $H_TAGKOPF) {
+            $sheet->getRowDimension($r)->setRowHeight($H_TAGKOPF);
+            foreach ($TAGE as $i => $tag) {
+                $von = 2 + $i * $SPALTEN_TAG;
+                $bis = $von + $SPALTEN_TAG - 1;
+                $bereich = $spalte($von) . $r . ':' . $spalte($bis) . $r;
+                $sheet->mergeCells($bereich);
+                $sheet->setCellValue($spalte($von) . $r, $tag);
+                $sheet->getStyle($bereich)->getFont()->setBold(true);
+                $sheet->getStyle($bereich)->getAlignment()
+                      ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER)
+                      ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER);
+                $rahmen($bereich);
+            }
+        };
+
+        $kopfzeile(1);
+        $r0 = 2;
+        $nr = 0;
+        foreach ($zeilen as $zeile) {
+            $rEnde = $r0 + $ZEILEN_BLOCK - 1;
+            $nr++;
+
+            // Beschriftung links (90 Grad) und rechts (-90 Grad, gespiegelt)
+            foreach ([[1, 90, $zeile['label']],
+                      [$SP_LETZTE, -90, ($zeile['label_rechts'] ?: $zeile['label'])]] as [$c, $rot, $text]) {
+                $bereich = $spalte($c) . $r0 . ':' . $spalte($c) . $rEnde;
+                $sheet->mergeCells($bereich);
+                $sheet->setCellValue($spalte($c) . $r0, $text);
+                $sheet->getStyle($bereich)->getFont()->setBold(true);
+                $sheet->getStyle($bereich)->getAlignment()
+                      ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER)
+                      ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER)
+                      ->setTextRotation($rot);
+                $rahmen($bereich);
+            }
+
+            $sheet->getRowDimension($r0)->setRowHeight($H_RAND);        // Arbeitsbeginn
+            $sheet->getRowDimension($rEnde)->setRowHeight($H_RAND);     // Arbeitsende
+            for ($h = 1; $h <= $STUNDEN; $h++) $sheet->getRowDimension($r0 + $h)->setRowHeight($H_STUNDE);
+
+            foreach ($TAGE as $i => $tag) {
+                $cStunde = 2 + $i * $SPALTEN_TAG;   // Spalte mit den Stundennummern
+
+                // Stundennummern 1. bis 9. - explizit als Text, sonst macht
+                // Excel aus "1." die Zahl 1.
+                for ($h = 1; $h <= $STUNDEN; $h++) {
+                    $sheet->setCellValueExplicit($spalte($cStunde) . ($r0 + $h), $h . '.',
+                        \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                }
+
+                // Personen des Tages sortieren: Erstkraefte zuerst, dann nach Kuerzel.
+                $personen = array_keys($zeile['belegung'][$tag] ?? []);
+                usort($personen, function ($a, $b) use ($kraefte) {
+                    $ra = $kraefte[$a]['typ'] === 'erst' ? 0 : 1;
+                    $rb = $kraefte[$b]['typ'] === 'erst' ? 0 : 1;
+                    if ($ra !== $rb) return $ra - $rb;
+                    return strcasecmp($kraefte[$a]['kuerzel'], $kraefte[$b]['kuerzel']);
+                });
+                $personen = array_slice($personen, 0, $SLOTS);   // mehr passen nicht aufs Blatt
+
+                foreach ($personen as $slot => $key) {
+                    $c = $cStunde + 1 + $slot;
+                    $kraft = $kraefte[$key];
+                    $stunden = array_keys($zeile['belegung'][$tag][$key]);
+                    sort($stunden);
+
+                    foreach ($stunden as $h) {
+                        $ref = $spalte($c) . ($r0 + $h);
+                        $sheet->setCellValue($ref, $kraft['kuerzel']);
+                        $st = $sheet->getStyle($ref);
+                        $st->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                        $st->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                           ->getStartColor()->setARGB($argb($kraft['farbe'], 'FFFFFFFF'));
+                        $st->getFont()->getColor()->setARGB($argb($kraft['textfarbe'], 'FF000000'));
+                    }
+
+                    // Arbeitsbeginn (vorerst pauschal 08:00) und -ende aus der
+                    // letzten belegten Stunde. Beides als echte Uhrzeit, damit
+                    // Excel es als h:mm formatiert.
+                    $letzte = end($stunden) ?: 1;
+                    foreach ([[$r0, $RASTER_START], [$rEnde, $RASTER_START + $letzte * $RASTER_DAUER]] as [$zr, $min]) {
+                        $ref = $spalte($c) . $zr;
+                        $sheet->setCellValue($ref, $min / 1440);
+                        $sheet->getStyle($ref)->getNumberFormat()->setFormatCode('h:mm');
+                        $sheet->getStyle($ref)->getFont()->setSize($PT_ZEIT);
+                        $sheet->getStyle($ref)->getAlignment()
+                              ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                    }
+                }
+
+                $rahmen($spalte($cStunde) . $r0 . ':' . $spalte($cStunde + $SPALTEN_TAG - 1) . $rEnde);
+            }
+
+            // Nach jedem sechsten Block umbrechen - so viele passen auf ein
+            // A3-Blatt (die Vorlage hat denselben Umbruch von Hand gesetzt).
+            if ($nr % $BLOECKE_PRO_SEITE === 0 && $nr < count($zeilen)) {
+                $sheet->setBreak('A' . $rEnde, \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::BREAK_ROW);
+            }
+
+            $r0 = $rEnde + 1;
+        }
+        $kopfzeile($r0);   // Wochentage unten wiederholen
+
+        // 4. Druckeinrichtung: A3 quer, eine Seite breit. fitToHeight(0) laesst
+        //    die Hoehe laufen - wie weit, bestimmen die Umbrueche oben.
+        $ps = $sheet->getPageSetup();
+        $ps->setPaperSize(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_A3);
+        $ps->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE);
+        $ps->setFitToWidth(1);
+        $ps->setFitToHeight(0);
+        // Oben Platz fuer den Seitenkopf, unten und seitlich knapp, damit die
+        // sechs Bloecke je Seite auch wirklich aufs Blatt passen.
+        $sheet->getPageMargins()->setLeft(0.3)->setRight(0.3)->setTop(0.7)->setBottom(0.3)
+                                ->setHeader(0.3)->setFooter(0.3);
+
+        // Seitenkopf wie in der Vorlage: mittig fett 22 pt der Titel, rechts das
+        // Erstellungsdatum. Steht im Kopf, nicht in einer Zelle - dadurch
+        // wiederholt Excel ihn auf jeder Seite.
+        $stmtSJ = $conn->prepare("SELECT schuljahr FROM schule WHERE id = ?");
+        $stmtSJ->execute([$schuljahr_id]);
+        $schuljahr = trim((string)$stmtSJ->fetchColumn());
+        // In der Datenbank steht "26/27", die Vorlage schreibt "2026/27".
+        if (preg_match('/^\d{2}\/\d{2}$/', $schuljahr)) $schuljahr = '20' . $schuljahr;
+        $sheet->getHeaderFooter()->setOddHeader(
+            '&C&"-,Fett"&22Diensteinsatzplan für das Schuljahr ' . $schuljahr
+            . '&RStand: ' . date('d.m.Y')
+        );
+
+        // 5. Ausliefern
+        $tmp = tempnam(sys_get_temp_dir(), 'gpl');
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($ss))->save($tmp);
+
+        $sj = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $schuljahr);
+        $dateiname = 'Gesamtplan' . ($sj !== '' ? '_' . $sj : '') . '.xlsx';
+
+        ob_end_clean();
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $dateiname . '"');
+        header('Content-Length: ' . filesize($tmp));
+        readfile($tmp);
+        unlink($tmp);
+        exit;
+
+    } catch (Exception $e) {
+        if (ob_get_level()) ob_end_clean();
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['success' => false, 'error' => 'Export fehlgeschlagen', 'message' => $e->getMessage()]);
+        exit;
+    }
+}
+
+
 ?>

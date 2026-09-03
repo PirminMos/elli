@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "0feef7d",
+      "hash": "a91c248",
+      "date": "2026-09-03",
+      "subject": "Feature: Gesamtplan als A3-Excel-Export mit eigener Auswahlseite"
+    },
+    {
+      "hash": "8daa822",
       "date": "2026-09-03",
       "subject": "Aendere Schuelerplan-Kopf: gerahmte Tabelle, Times New Roman, gleiche Spalten"
     },

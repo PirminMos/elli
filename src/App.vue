@@ -178,6 +178,74 @@
         </div>
       </div>
 
+      <!-- Gesamtplan: oben auswaehlen, unten die Zeilen des Plans ordnen/gruppieren -->
+      <div v-if="view === 'gesamtplan'" class="gesamtplan-container">
+        <div class="hero-section small">
+          <div class="title-with-icon">
+            <img :src="getIcon('gesamtplan')" class="title-icon-svg" alt="Icon">
+            <h1 class="main-title">Gesamtplan</h1>
+          </div>
+        </div>
+
+        <div class="gp-auswahl">
+          <div v-for="spalte in gesamtplanSpalten" :key="spalte.quelle" class="gp-spalte glass">
+            <h3>{{ spalte.titel }}</h3>
+            <label v-for="item in spalte.items" :key="item.id" class="gp-option">
+              <input type="checkbox"
+                     :checked="gpIstGewaehlt(spalte.quelle, item.id)"
+                     @change="gpUmschalten(spalte.quelle, item)">
+              <span class="gp-option-name">{{ item.name }}</span>
+            </label>
+            <p v-if="!spalte.items.length" class="gp-leer">nichts angelegt</p>
+          </div>
+        </div>
+
+        <div class="gp-zeilen glass">
+          <div class="gp-zeilen-kopf">
+            <h3>Zeilen des Gesamtplans <small>({{ gpZeilen.length }})</small></h3>
+            <div class="gp-aktionen">
+              <button class="glass-btn btn-small"
+                      title="Freie Zeile ohne Klasse/Fach/Aktivität – wird leer gedruckt"
+                      @click="gpNeueZeile">+ Zeile</button>
+              <button class="glass-btn btn-small" :disabled="gpMarkierte.length < 2"
+                      :class="{ 'btn-disabled': gpMarkierte.length < 2 }"
+                      @click="gpGruppieren">Zusammenfassen</button>
+              <button class="glass-btn btn-small" @click="saveGesamtplan">
+                <span class="save-icon">💾</span> Speichern
+              </button>
+              <button class="glass-btn btn-small" :disabled="!gpZeilen.length"
+                      :class="{ 'btn-disabled': !gpZeilen.length }"
+                      title="Als Excel-Datei für DIN A3 exportieren"
+                      @click="exportGesamtplan">
+                <span class="save-icon">📄</span> Exportieren
+              </button>
+            </div>
+          </div>
+
+          <p class="gp-leer">
+            Oben Klassen, Fächer oder Aktivitäten anhaken – jeder Haken wird zu einer Zeile.
+            „+ Zeile“ ergänzt eine freie Zeile ohne Zuordnung.
+          </p>
+
+          <div v-for="(zeile, i) in gpZeilen" :key="i" class="gp-zeile">
+            <input type="checkbox" v-model="zeile.markiert" title="Zum Zusammenfassen markieren">
+            <span class="gp-nr">{{ i + 1 }}</span>
+            <input v-model="zeile.label" class="glass-input gp-label" placeholder="Beschriftung links">
+            <input v-model="zeile.label_rechts" class="glass-input gp-label"
+                   :placeholder="zeile.label || 'Beschriftung rechts'"
+                   title="Abweichende Beschriftung am rechten Rand (leer = wie links)">
+            <span class="gp-inhalt" :class="{ 'gp-ohne': !zeile.eintraege.length }">{{ gpInhaltText(zeile) }}</span>
+            <button class="gp-icon-btn" title="Nach oben" :disabled="i === 0"
+                    @click="gpVerschieben(i, -1)">↑</button>
+            <button class="gp-icon-btn" title="Nach unten" :disabled="i === gpZeilen.length - 1"
+                    @click="gpVerschieben(i, 1)">↓</button>
+            <button v-if="zeile.eintraege.length > 1" class="gp-icon-btn" title="Gruppe auflösen"
+                    @click="gpAufloesen(i)">⤨</button>
+            <button class="gp-icon-btn gp-weg" title="Zeile entfernen" @click="gpEntfernen(i)">×</button>
+          </div>
+        </div>
+      </div>
+
       <div v-if="view === 'editor' && activeCategory === 'stundentafel'" class="editor-container glass">
         <div class="hero-section small">
           <h1 class="main-title">{{ currentTemplate.id ? 'Stundentafel bearbeiten' : 'Neue Stundentafel' }}</h1>
@@ -4403,6 +4471,154 @@ input:checked + .slider:before {
   letter-spacing: 1px;
 }
 
+/* --- Gesamtplan-Auswahlseite ------------------------------------------- */
+.gesamtplan-container {
+  padding: 0 40px 40px 40px;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.gp-auswahl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 25px;
+}
+
+.gp-spalte {
+  padding: 18px 22px;
+  border-radius: 15px;
+  max-height: 38vh;
+  overflow-y: auto;
+}
+
+.gp-spalte h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  color: var(--primary);
+}
+
+.gp-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+
+/* Die globale input-Regel (width:100%, height:50px) wuerde aus jeder Checkbox
+   einen grossen Block machen - hier zurueck auf Kaestchengroesse. */
+.gesamtplan-container input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+}
+
+.gp-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-leer {
+  opacity: 0.5;
+  font-size: 0.85rem;
+  margin: 6px 0;
+}
+
+.gp-zeilen {
+  padding: 18px 22px;
+  border-radius: 15px;
+}
+
+.gp-zeilen-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 12px;
+}
+
+.gp-zeilen-kopf h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--primary);
+}
+
+.gp-aktionen {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-small {
+  padding: 8px 14px;
+  font-size: 0.85rem;
+}
+
+.gp-zeile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.gp-nr {
+  width: 22px;
+  text-align: right;
+  opacity: 0.5;
+  font-size: 0.85rem;
+}
+
+/* Kompakter als die globale Eingabefeld-Regel (die 50 px hoch ist). */
+.gp-label {
+  width: 180px;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 6px 10px;
+  margin-bottom: 0;
+  font-size: 0.9rem;
+}
+
+/* Auflistung der enthaltenen Elemente - darf schrumpfen, nie umbrechen. */
+.gp-inhalt {
+  flex: 1;
+  min-width: 0;
+  opacity: 0.6;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-ohne {
+  font-style: italic;
+  opacity: 0.45;
+}
+
+.gp-icon-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.gp-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.gp-icon-btn.gp-weg:hover {
+  background: rgba(255, 0, 0, 0.35);
+}
+
 .trash-zone {
   position: fixed;
   bottom: 30px;
@@ -5564,10 +5780,26 @@ export default {
       openDropupId: null,
       klassenVerfuegbarkeiten: [],
       currentDiensteinsatzplan: {},
+      // Gesamtplan: links die auswaehlbaren Quellen, rechts die daraus gebauten
+      // Zeilen des Plans. gpZeilen ist die einzige Wahrheit - ob ein Element
+      // angehakt ist, leitet sich daraus ab (siehe gpIstGewaehlt).
+      gpQuellen: {klassen: [], faecher: [], aktivitaeten: []},
+      gpZeilen: [],
       activeZweitkraftId: '',
     }
   },
   computed: {
+    // Die drei Auswahlspalten des Gesamtplans.
+    gesamtplanSpalten() {
+      return [
+        {quelle: 'klasse', titel: 'Klassen', items: this.gpQuellen.klassen},
+        {quelle: 'fach', titel: 'Schulfächer', items: this.gpQuellen.faecher},
+        {quelle: 'aktivitaet', titel: 'Aktivitäten', items: this.gpQuellen.aktivitaeten},
+      ];
+    },
+    gpMarkierte() {
+      return this.gpZeilen.filter(z => z.markiert);
+    },
     // "Version vom …" – Datum der letzten Aenderung (aus src/version.json,
     // bei jedem Commit automatisch aktualisiert). Ausgabe als TT.MM.JJJJ.
     versionsDatum() {
@@ -8393,6 +8625,119 @@ export default {
       return '#474322';                    // noch offen → gelb
     },
     // Lädt den Diensteinsatzplan einer Zweitkraft (SOLL-Stundentafel + IST-Termine)
+    // --- Gesamtplan ------------------------------------------------------
+    async loadGesamtplan() {
+      if (!this.currentSchuljahrId) return;
+      try {
+        const res = await fetch(`${API_URL}?action=get_gesamtplan&schuljahr_id=${this.currentSchuljahrId}`);
+        const d = await res.json();
+        if (!d.success) {
+          this.showStatus(d.error || "Gesamtplan konnte nicht geladen werden", "error");
+          return;
+        }
+        this.gpQuellen = {
+          klassen: d.klassen || [],
+          faecher: d.faecher || [],
+          aktivitaeten: d.aktivitaeten || []
+        };
+        this.gpZeilen = (d.zeilen || []).map(z => ({
+          label: z.label || '',
+          label_rechts: z.label_rechts || '',
+          eintraege: z.eintraege || [],
+          markiert: false
+        }));
+      } catch (e) {
+        console.error("Fehler beim Laden des Gesamtplans:", e);
+        this.showStatus("Verbindung zum Server fehlgeschlagen", "error");
+      }
+    },
+    // Name eines Eintrags aus der passenden Quellliste holen.
+    gpNameVon(eintrag) {
+      const liste = eintrag.quelle === 'klasse' ? this.gpQuellen.klassen
+          : eintrag.quelle === 'fach' ? this.gpQuellen.faecher
+              : this.gpQuellen.aktivitaeten;
+      const treffer = liste.find(x => x.id === eintrag.id);
+      return treffer ? treffer.name : '?';
+    },
+    gpIstGewaehlt(quelle, id) {
+      return this.gpZeilen.some(z => z.eintraege.some(e => e.quelle === quelle && e.id === id));
+    },
+    // Haken setzen/entfernen. Neu angehakt entsteht eine eigene Zeile; wird der
+    // letzte Eintrag einer Zeile abgewaehlt, faellt die Zeile weg.
+    gpUmschalten(quelle, item) {
+      const i = this.gpZeilen.findIndex(z => z.eintraege.some(e => e.quelle === quelle && e.id === item.id));
+      if (i < 0) {
+        this.gpZeilen.push({
+          label: item.name, label_rechts: '',
+          eintraege: [{quelle, id: item.id}], markiert: false
+        });
+        return;
+      }
+      const zeile = this.gpZeilen[i];
+      zeile.eintraege = zeile.eintraege.filter(e => !(e.quelle === quelle && e.id === item.id));
+      if (!zeile.eintraege.length) this.gpZeilen.splice(i, 1);
+    },
+    gpInhaltText(zeile) {
+      if (!zeile.eintraege.length) return 'ohne Zuordnung – bleibt im Export leer';
+      const namen = zeile.eintraege.map(e => this.gpNameVon(e));
+      return namen.length > 1 ? `${namen.length} Einträge: ${namen.join(', ')}` : namen.join('');
+    },
+    // Freie Zeile ohne Klasse/Fach/Aktivität. Der Export druckt dafür einen
+    // leeren Block - praktisch für Zeilen, die von Hand ausgefüllt werden.
+    // Die Beschriftung ist vorbelegt, weil der Server Zeilen ohne Label
+    // verwirft und sie sonst beim Speichern stillschweigend verschwänden.
+    gpNeueZeile() {
+      this.gpZeilen.push({label: 'Neue Zeile', label_rechts: '', eintraege: [], markiert: false});
+    },
+    // Markierte Zeilen zu einer verschmelzen (z.B. MSH + MSD + HU -> eine Zeile).
+    gpGruppieren() {
+      const markiert = this.gpZeilen.filter(z => z.markiert);
+      if (markiert.length < 2) return;
+      const ziel = markiert[0];
+      ziel.eintraege = markiert.flatMap(z => z.eintraege);
+      ziel.label = markiert.map(z => z.label).filter(Boolean).join('/');
+      ziel.markiert = false;
+      this.gpZeilen = this.gpZeilen.filter(z => z === ziel || !markiert.includes(z));
+    },
+    gpAufloesen(i) {
+      const zeile = this.gpZeilen[i];
+      const neue = zeile.eintraege.map(e => ({
+        label: this.gpNameVon(e), label_rechts: '', eintraege: [e], markiert: false
+      }));
+      this.gpZeilen.splice(i, 1, ...neue);
+    },
+    gpVerschieben(i, richtung) {
+      const j = i + richtung;
+      if (j < 0 || j >= this.gpZeilen.length) return;
+      const [zeile] = this.gpZeilen.splice(i, 1);
+      this.gpZeilen.splice(j, 0, zeile);
+    },
+    gpEntfernen(i) {
+      this.gpZeilen.splice(i, 1);
+    },
+    async saveGesamtplan() {
+      try {
+        const res = await fetch(`${API_URL}?action=save_gesamtplan`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({schuljahr_id: this.currentSchuljahrId, zeilen: this.gpZeilen})
+        });
+        const d = await res.json();
+        if (d.success) this.showStatus("Gesamtplan gespeichert", "success");
+        else this.showStatus(d.error || "Speichern fehlgeschlagen", "error");
+        return d.success;
+      } catch (e) {
+        console.error("Fehler beim Speichern des Gesamtplans:", e);
+        this.showStatus("Verbindung zum Server fehlgeschlagen", "error");
+        return false;
+      }
+    },
+    async exportGesamtplan() {
+      // Erst sichern: der Server exportiert aus der Datenbank, nicht aus der
+      // Oberflaeche - ungespeicherte Aenderungen waeren sonst nicht dabei.
+      if (!await this.saveGesamtplan()) return;
+      window.open(`${API_URL}?action=export_gesamtplan&schuljahr_id=${this.currentSchuljahrId}`, '_blank');
+    },
     async loadDiensteinsatzplan(zweitkraftId) {
       if (!zweitkraftId || !this.currentSchuljahrId) return;
 
@@ -8420,8 +8765,17 @@ export default {
       }
     },
     navigate(category) {
+      // Der Gesamtplan hat keine Listenansicht, sondern eine eigene
+      // Auswahlseite (Klassen/Fächer/Aktivitäten -> Zeilen des Plans).
+      if (category === 'gesamtplan') {
+        this.activeCategory = category;
+        this.view = 'gesamtplan';
+        history.pushState({view: 'gesamtplan', category}, '', '#gesamtplan');
+        this.loadGesamtplan();
+        return;
+      }
       // Sonderfälle ausschließen
-      if (category === 'Gesamtplan' || category === 'Dokument(e) importieren') {
+      if (category === 'Dokument(e) importieren') {
         console.log("Spezialfunktion für:", category);
         return;
       }
@@ -9063,7 +9417,7 @@ export default {
       this.planData = {};
       this.activeDropdown = null;
       this.showSettings = false;
-      if (this.view === 'list') {
+      if (this.view === 'list' || this.view === 'gesamtplan') {
         this.view = 'home';
         this.activeCategory = ''; // Kategorie zurücksetzen
       }
