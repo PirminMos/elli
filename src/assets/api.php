@@ -2320,17 +2320,22 @@ if ($action === 'export_schuelerstundenplan') {
         }
 
         // --- WordML-Helfer ---
-        $run = function ($text, $bold = false, $size = 20) use ($esc) {
+        // $font setzt die Schriftart explizit (sonst gilt die Vorgabe des Templates).
+        // Reihenfolge in rPr ist schema-relevant: rFonts, b, sz, szCs.
+        $rFonts = function ($font) {
+            return $font ? '<w:rFonts w:ascii="' . $font . '" w:hAnsi="' . $font . '"/>' : '';
+        };
+        $run = function ($text, $bold = false, $size = 20, $font = null) use ($esc, $rFonts) {
             if ($text === '' || $text === null) return '';
             $b = $bold ? '<w:b/>' : '';
-            return '<w:r><w:rPr>' . $b . '<w:sz w:val="' . $size . '"/><w:szCs w:val="' . $size . '"/></w:rPr>'
+            return '<w:r><w:rPr>' . $rFonts($font) . $b . '<w:sz w:val="' . $size . '"/><w:szCs w:val="' . $size . '"/></w:rPr>'
                  . '<w:t xml:space="preserve">' . $esc($text) . '</w:t></w:r>';
         };
-        $para = function ($text = '', $bold = false, $size = 20, $align = 'left', $after = 0) use ($run) {
+        $para = function ($text = '', $bold = false, $size = 20, $align = 'left', $after = 0, $font = null) use ($run, $rFonts) {
             $b = $bold ? '<w:b/>' : '';
             return '<w:p><w:pPr><w:spacing w:after="' . $after . '"/><w:jc w:val="' . $align . '"/>'
-                 . '<w:rPr>' . $b . '<w:sz w:val="' . $size . '"/><w:szCs w:val="' . $size . '"/></w:rPr></w:pPr>'
-                 . $run($text, $bold, $size) . '</w:p>';
+                 . '<w:rPr>' . $rFonts($font) . $b . '<w:sz w:val="' . $size . '"/><w:szCs w:val="' . $size . '"/></w:rPr></w:pPr>'
+                 . $run($text, $bold, $size, $font) . '</w:p>';
         };
         // $borders nimmt fertiges <w:tcBorders>-XML auf (z.B. die Unterschriftslinie
         // als Oberkante einer Zelle). Reihenfolge in tcPr ist schema-relevant:
@@ -2364,30 +2369,45 @@ if ($action === 'export_schuelerstundenplan') {
             return '<w:tbl>' . $pr . '<w:tblGrid>' . $cols . '</w:tblGrid>' . implode('', $rows) . '</w:tbl>';
         };
 
-        // --- Kopf (2-spaltig: links Titel/Schule, rechts Zeitraum/Klasse). Breite
-        //     entspricht der linken Outer-Spalte (LCOL) - die Stundentafel steht
-        //     rechts daneben und reicht bis ganz nach oben (siehe Outer weiter unten).
-        $HL = 6250; $HR = 4250;
-        // Paragraph mit zwei unterschiedlich fett gesetzten Läufen (hier für
-        // "Klasse" normal + Klassenname fett).
-        $paraMixed = function ($teile, $size = 20, $align = 'left', $after = 0) use ($run) {
+        // --- Kopf (2-spaltig: links Titel/Schule, rechts Zeitraum/Klasse). Er sitzt
+        //     in der linken Outer-Spalte, die Stundentafel steht rechts daneben und
+        //     reicht bis ganz nach oben (siehe Outer weiter unten).
+        //     Schrift laut Vorgabe: Times New Roman, normal 14 pt, fett 13 pt
+        //     (w:sz zaehlt in halben Punkten). Sichtbare Rahmen, und bewusst OHNE
+        //     nomar, damit der Text nicht an den Linien klebt.
+        //
+        //     Masse des Wochenrasters: stehen hier oben, weil der Kopf sich daran
+        //     ausrichtet (siehe $KOPFW).
+        $SUB = 866; $ZW = 1740; $DAYW = 2 * $SUB;
+        // Beide Kopfspalten gleich breit. Gesamtbreite = Breite des Wochenrasters
+        // darunter, damit der Kopf auf derselben Kante endet und denselben Abstand
+        // zur Stundentafel rechts haelt wie das Raster (LCOL ist etwas breiter).
+        $KOPFW = $ZW + 10 * $SUB;
+        $HL = intdiv($KOPFW, 2); $HR = $KOPFW - $HL;
+        $KF = 'Times New Roman';
+        $KN = 28;   // normal 14 pt
+        $KB = 26;   // fett   13 pt
+        $KH = 340;  // Zeilenhoehe je Kopfzeile (fliesst unten in $ttMin ein)
+        // Paragraph aus mehreren Laeufen mit je eigener Fettung und Groesse
+        // (hier "Klasse" normal + Klassenname fett).
+        $paraMixed = function ($teile, $align = 'left', $after = 0, $font = null) use ($run) {
             $inner = '';
-            foreach ($teile as [$text, $bold]) $inner .= $run($text, $bold, $size);
+            foreach ($teile as [$text, $bold, $size]) $inner .= $run($text, $bold, $size, $font);
             return '<w:p><w:pPr><w:spacing w:after="' . $after . '"/><w:jc w:val="' . $align . '"/></w:pPr>' . $inner . '</w:p>';
         };
         $kopf = $tbl([$HL, $HR], [
             $trow([
-                $tcell($para('Schüler-Stundenplan   Schuljahr ' . $schule['schuljahr'], true, 32, 'left'), $HL, 1, null, 'center', true),
-                $tcell($para('für die Zeit vom ' . $zeitraum, true, 22, 'left'), $HR, 1, null, 'center', true),
-            ], 460),
+                $tcell($para('Schüler-Stundenplan   Schuljahr ' . $schule['schuljahr'], true, $KB, 'left', 0, $KF), $HL),
+                $tcell($para('für die Zeit vom ' . $zeitraum, false, $KN, 'left', 0, $KF), $HR),
+            ], $KH),
             $trow([
-                $tcell($para($schulname, true, 24, 'center'), $HL, 1, null, 'center', true),
-                $tcell($paraMixed([['Klasse ', false], [$klasse['name'], true]], 24, 'left'), $HR, 1, null, 'center', true),
-            ], 370),
-        ], false);
+                $tcell($para($schulname, false, $KN, 'center', 0, $KF), $HL),
+                $tcell($paraMixed([['Klasse ', false, $KN], [$klasse['name'], true, $KB]], 'left', 0, $KF), $HR),
+            ], $KH),
+        ], true);
 
         // --- Wochenraster (Zeit + 5 Tage à 2 Sub-Spalten für Differenzierung) ---
-        $SUB = 866; $ZW = 1740; $DAYW = 2 * $SUB;
+        // $SUB/$ZW/$DAYW sind oben beim Kopf definiert, der sich an dieser Breite ausrichtet.
         $gridWT = array_merge([$ZW], array_fill(0, 10, $SUB)); // 11 Spalten
         $headCells = [$tcell($para('Unterrichtszeit', true, 18, 'center'), $ZW, 1, 'D9D9D9')];
         foreach (['Montag','Dienstag','Mittwoch','Donnerstag','Freitag'] as $tagName)
@@ -2482,7 +2502,7 @@ if ($action === 'export_schuelerstundenplan') {
         // Zielhoehe = Kopf + Wochenraster links (die Stundentafel steht jetzt
         // rechts neben beiden und reicht bis ganz nach oben), abzueglich der
         // einen Legendenzeile, die unter der Stundentafel steht.
-        $ttMin = (460 + 370) + 320 + max(1, count($raster)) * 460 - 200;
+        $ttMin = (2 * $KH) + 320 + max(1, count($raster)) * 460 - 200;
         $fixH  = 320 + 300 + 300 + count($tafel) * 280 + 300 + 300 + 300; // Titel,Kopf,Pflicht-Label,Fächer,Wahlpfl-Label,Wahlf-Label,Summe
         $rest = (int)floor(($ttMin - $fixH) / 300) - ($emptyPflicht + $emptyWahlpflicht + $emptyWahlfaecher);
         if ($rest > 0) $emptyPflicht += $rest;

@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "6befc09",
+      "hash": "0feef7d",
+      "date": "2026-09-03",
+      "subject": "Aendere Schuelerplan-Kopf: gerahmte Tabelle, Times New Roman, gleiche Spalten"
+    },
+    {
+      "hash": "859060e",
       "date": "2026-09-03",
       "subject": "Fix: Loeschen per Papierkorb auch im Diensteinsatzplan"
     },
