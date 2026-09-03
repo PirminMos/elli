@@ -6942,14 +6942,20 @@ export default {
 
       if (dragMode === 'move') {
 
-        // Wir löschen nur, wenn es ein existierender Termin aus dem Plan ist
-        if (this.activeCategory === 'lehrerstundenplan') {
-          // 1. Den zu löschenden Termin finden, um seine Position (Tag/Stunde) zu kennen
-          const neueListe = this.currentLehrerstundenplan.termine.filter(t => {
+        // Wir löschen nur, wenn es ein existierender Termin aus dem Plan ist.
+        // Lehrer- und Diensteinsatzplan sind hier baugleich - beide führen ihre
+        // Termine unter termin_id (DB-ID bzw. crypto.randomUUID bei neuen
+        // Einträgen) und leiten Stundentafel/IST rein rechnerisch daraus ab.
+        if (this.activeCategory === 'lehrerstundenplan' || this.activeCategory === 'diensteinsatzplan') {
+          const zielPlan = this.activeCategory === 'diensteinsatzplan'
+              ? this.currentDiensteinsatzplan
+              : this.currentLehrerstundenplan;
+
+          const neueListe = (zielPlan.termine || []).filter(t => {
             return String(t.termin_id) !== uuid;
           });
 
-          this.currentLehrerstundenplan.termine = neueListe;
+          zielPlan.termine = neueListe;
           console.log("Termin wurde entfernt. Neue Anzahl:", neueListe.length);
 
         } else if (this.activeCategory === 'schuelerstundenplan') {

@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "1f69cfb",
+      "hash": "6befc09",
+      "date": "2026-09-03",
+      "subject": "Fix: Loeschen per Papierkorb auch im Diensteinsatzplan"
+    },
+    {
+      "hash": "10d1266",
       "date": "2026-09-03",
       "subject": "Fix: Papierkorb-Overlay bleibt nach Drop neben dem Plan stehen"
     },
