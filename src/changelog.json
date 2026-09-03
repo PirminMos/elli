@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "0032d7b",
+      "hash": "cf653a0",
+      "date": "2026-09-03",
+      "subject": "Aendere Dienstplan-Fuss: Namen aus Einstellungen, Unterschrift nach Geschlecht"
+    },
+    {
+      "hash": "12c88cb",
       "date": "2026-09-03",
       "subject": "Aendere Schuelerplan-Fuss: laengere Unterschriftszeilen, Namen aus Einstellungen"
     },

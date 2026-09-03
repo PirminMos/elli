@@ -3483,10 +3483,14 @@ if ($action === 'get_raum_verfuegbarkeit') {
               return $s;
           };
 
-          // 1. Schule (Schuljahr + Adresse als JSON {name, strasse, stadt})
-          $stmtS = $conn->prepare("SELECT schuljahr, adresse FROM schule WHERE id = ?");
+          // 1. Schule (Schuljahr + Adresse als JSON {name, strasse, stadt}) samt
+          //    Nachname/Titel/Genehmiger aus den Einstellungen im Burgermenue
+          elli_ensure_schule_columns($conn);
+          $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger
+                                   FROM schule WHERE id = ?");
           $stmtS->execute([$schuljahr_id]);
-          $schule = $stmtS->fetch(PDO::FETCH_ASSOC) ?: ['schuljahr' => '', 'adresse' => null];
+          $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
+                    ?: ['schuljahr' => '', 'adresse' => null, 'titel' => '', 'nachname' => '', 'genehmiger' => ''];
 
           $adresse = json_decode($schule['adresse'] ?? '', true) ?: [];
           $nameZeilen = preg_split('/\r\n|\r|\n/', trim($adresse['name'] ?? ''));
@@ -3568,6 +3572,27 @@ if ($action === 'get_raum_verfuegbarkeit') {
           $tpl->setValue('grund', $esc($z['grund_ermaessigung']));
           $tpl->setValue('erstellt', date('d.m.y'));
           $tpl->setValue('genehmigt', date('d.m.y', strtotime('+1 day')));
+
+          // Ersteller/Genehmiger aus den Einstellungen im Burgermenue. Ersteller ist
+          // "Nachname, Titel" des Schuljahres; sind beide Felder leer, faellt der Fuss
+          // auf den globalen Anzeigenamen zurueck. Mehrfache Leerzeichen aus den
+          // Eingabefeldern werden eingedampft.
+          $einzeilig = fn($v) => trim(preg_replace('/\s+/u', ' ', (string)$v));
+          $ersteller = implode(', ', array_filter([
+              $einzeilig($schule['nachname'] ?? ''),
+              $einzeilig($schule['titel'] ?? ''),
+          ], fn($v) => $v !== ''));
+          if ($ersteller === '') {
+              $stmtU = $conn->prepare("SELECT wert FROM einstellungen WHERE schluessel = 'nutzername'");
+              $stmtU->execute();
+              $ersteller = $einzeilig($stmtU->fetchColumn() ?: '');
+          }
+          $tpl->setValue('ersteller', $esc($ersteller));
+          $tpl->setValue('genehmiger', $esc($einzeilig($schule['genehmiger'] ?? '')));
+
+          // Unterschriftszeile in der Fusszeile: weiblich als Standard, nur bei einer
+          // als maennlich gefuehrten Zweitkraft ohne "in".
+          $tpl->setValue('unterschrift', 'Unterschrift Mitarbeiter' . (!empty($z['maennlich']) ? '' : 'in'));
 
           // Tages-Slots: Präfix + Anzahl freier Zeilen im Template
           $slots = [
