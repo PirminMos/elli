@@ -2211,13 +2211,23 @@ if ($action === 'export_schuelerstundenplan') {
         if (!$klasse) { ob_end_clean(); echo json_encode(["success" => false, "error" => "Klasse nicht gefunden"]); exit; }
 
         elli_ensure_schule_columns($conn);
-        $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger
+        $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger,
+                                         schuljahr_beginn, schuljahr_ende
                                  FROM schule WHERE id = ?");
         $stmtS->execute([$klasse['schuljahr_id']]);
         $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
-                  ?: ['schuljahr' => '', 'adresse' => null, 'titel' => '', 'nachname' => '', 'genehmiger' => ''];
+                  ?: ['schuljahr' => '', 'adresse' => null, 'titel' => '', 'nachname' => '', 'genehmiger' => '',
+                      'schuljahr_beginn' => null, 'schuljahr_ende' => null];
         $adresse = json_decode($schule['adresse'] ?? '', true) ?: [];
         $schulname = trim(preg_replace('/\s+/', ' ', (string)($adresse['name'] ?? '')));
+        // Zeitraum aus Schuljahresbeginn/-ende (Burgermenue); ohne Eintrag bleibt die
+        // jeweilige Seite leer statt der bisherigen Unterstrich-Platzhalter.
+        $fmtDatum = function ($d) {
+            if (!$d) return '';
+            $t = strtotime((string)$d);
+            return $t ? date('d.m.y', $t) : '';
+        };
+        $zeitraum = $fmtDatum($schule['schuljahr_beginn']) . ' – ' . $fmtDatum($schule['schuljahr_ende']);
 
         // 2. Zeitraster der Klasse (individuelle Stundenzeiten)
         $stmtR = $conn->prepare("SELECT stunden_index, startzeit, endzeit
@@ -2359,7 +2369,7 @@ if ($action === 'export_schuelerstundenplan') {
         $kopf = $tbl([$HL, $HR], [
             $trow([
                 $tcell($para('Schüler-Stundenplan   Schuljahr ' . $schule['schuljahr'], true, 32, 'left'), $HL, 1, null, 'center', true),
-                $tcell($para('für die Zeit vom ______________ – ______________', true, 22, 'left'), $HR, 1, null, 'center', true),
+                $tcell($para('für die Zeit vom ' . $zeitraum, true, 22, 'left'), $HR, 1, null, 'center', true),
             ]),
             $trow([
                 $tcell($para($schulname, true, 24, 'left'), $HL, 1, null, 'center', true),

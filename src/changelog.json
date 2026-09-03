@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "cf653a0",
+      "hash": "f522dfa",
+      "date": "2026-09-03",
+      "subject": "Aendere Schuelerplan-Kopf: Zeitraum aus Schuljahresbeginn/-ende"
+    },
+    {
+      "hash": "ca96236",
       "date": "2026-09-03",
       "subject": "Aendere Dienstplan-Fuss: Namen aus Einstellungen, Unterschrift nach Geschlecht"
     },
