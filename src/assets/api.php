@@ -2210,9 +2210,12 @@ if ($action === 'export_schuelerstundenplan') {
         $klasse = $stmtK->fetch(PDO::FETCH_ASSOC);
         if (!$klasse) { ob_end_clean(); echo json_encode(["success" => false, "error" => "Klasse nicht gefunden"]); exit; }
 
-        $stmtS = $conn->prepare("SELECT schuljahr, adresse FROM schule WHERE id = ?");
+        elli_ensure_schule_columns($conn);
+        $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger
+                                 FROM schule WHERE id = ?");
         $stmtS->execute([$klasse['schuljahr_id']]);
-        $schule = $stmtS->fetch(PDO::FETCH_ASSOC) ?: ['schuljahr' => '', 'adresse' => null];
+        $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
+                  ?: ['schuljahr' => '', 'adresse' => null, 'titel' => '', 'nachname' => '', 'genehmiger' => ''];
         $adresse = json_decode($schule['adresse'] ?? '', true) ?: [];
         $schulname = trim(preg_replace('/\s+/', ' ', (string)($adresse['name'] ?? '')));
 
@@ -2283,10 +2286,19 @@ if ($action === 'export_schuelerstundenplan') {
         $sumV = 0; $sumD = 0;
         foreach ($tafel as $t) { $sumV += $t['v']; $sumD += $t['d']; }
 
-        // 5. Ersteller (Anzeigename aus den Einstellungen)
-        $stmtU = $conn->prepare("SELECT wert FROM einstellungen WHERE schluessel = 'nutzername'");
-        $stmtU->execute();
-        $ersteller = $stmtU->fetchColumn() ?: '';
+        // 5. Ersteller/Genehmiger aus den Einstellungen im Burgermenue.
+        //    Ersteller = "Nachname, Titel" (schuljahrbezogen). Sind beide Felder leer,
+        //    faellt der Fuss auf den globalen Anzeigenamen zurueck.
+        $ersteller = implode(', ', array_filter([
+            trim((string)($schule['nachname'] ?? '')),
+            trim((string)($schule['titel'] ?? '')),
+        ], fn($v) => $v !== ''));
+        if ($ersteller === '') {
+            $stmtU = $conn->prepare("SELECT wert FROM einstellungen WHERE schluessel = 'nutzername'");
+            $stmtU->execute();
+            $ersteller = $stmtU->fetchColumn() ?: '';
+        }
+        $genehmiger = trim((string)($schule['genehmiger'] ?? ''));
 
         // 6. Dokument-Body als WordML aufbauen (dynamisch, damit Zellen bei
         //    äußerer Differenzierung in zwei Zellen geteilt werden können).
@@ -2310,9 +2322,13 @@ if ($action === 'export_schuelerstundenplan') {
                  . '<w:rPr>' . $b . '<w:sz w:val="' . $size . '"/><w:szCs w:val="' . $size . '"/></w:rPr></w:pPr>'
                  . $run($text, $bold, $size) . '</w:p>';
         };
-        $tcell = function ($inner, $w, $span = 1, $shade = null, $valign = 'center', $nomar = false) {
+        // $borders nimmt fertiges <w:tcBorders>-XML auf (z.B. die Unterschriftslinie
+        // als Oberkante einer Zelle). Reihenfolge in tcPr ist schema-relevant:
+        // tcW, gridSpan, tcBorders, shd, tcMar, vAlign.
+        $tcell = function ($inner, $w, $span = 1, $shade = null, $valign = 'center', $nomar = false, $borders = null) {
             $pr = '<w:tcW w:w="' . $w . '" w:type="dxa"/>';
             if ($span > 1) $pr .= '<w:gridSpan w:val="' . $span . '"/>';
+            if ($borders) $pr .= $borders;
             if ($shade) $pr .= '<w:shd w:val="clear" w:color="auto" w:fill="' . $shade . '"/>';
             // Null-Zellränder für die äußere Anordnung, damit die inneren Tabellen
             // ihre volle Breite (inkl. rechtem Rahmen) behalten und nicht abgeschnitten werden.
@@ -2478,19 +2494,38 @@ if ($action === 'export_schuelerstundenplan') {
         ], false);
 
         // --- Fuß ---
-        $FW = 4762;
-        $fuss = $tbl([$FW, $FW, $FW], [
+        // Rahmenlos: die Unterschriftslinien sind die Oberkanten der Beschriftungs-
+        // zellen und damit so lang wie ihre Spalte. Die schmalen Zwischenspalten
+        // halten die drei Linien auseinander, die Leerzeile darueber schafft Platz
+        // zum Unterschreiben.
+        $FL = 4495; $FG = 400; $FR = 4496;   // Linie | Luecke | Linie | Luecke | Linie
+        $FC = $FL + $FG;                     // Textzelle oben: Linie + Luecke
+        $SIG = '<w:tcBorders><w:top w:val="single" w:sz="6" w:space="0" w:color="000000"/></w:tcBorders>';
+        // "durch <Name>" entfaellt, solange im Burgermenue kein Name hinterlegt ist;
+        // mehrfache Leerzeichen werden eingedampft.
+        $fussZeile = function ($vorn, $wer) {
+            $t = $vorn . (trim((string)$wer) !== '' ? ' durch ' . $wer : '');
+            return trim(preg_replace('/\s+/u', ' ', $t));
+        };
+        $fuss = $tbl([$FL, $FG, $FL, $FG, $FR], [
             $trow([
-                $tcell($para('Erstellt am ' . date('d.m.y') . '  durch ' . $ersteller, false, 18), $FW),
-                $tcell($para('Genehmigt am ' . date('d.m.y', strtotime('+1 day')) . '  durch ____________', false, 18), $FW),
-                $tcell($para('Gesehen am ____________', false, 18), $FW),
+                $tcell($para($fussZeile('Erstellt am ' . date('d.m.y'), $ersteller), false, 18), $FC, 2),
+                $tcell($para($fussZeile('Genehmigt am ' . date('d.m.y', strtotime('+1 day')), $genehmiger), false, 18), $FC, 2),
+                $tcell($para('Gesehen am ____________', false, 18), $FR),
             ], 300),
             $trow([
-                $tcell($para('Unterschrift Klassenleiter/in: ____________', false, 18), $FW),
-                $tcell($para('Unterschrift Schulleiter/Stellvertreterin: ____________', false, 18), $FW),
-                $tcell($para('Regierung von Ndb. ____________', false, 18), $FW),
+                $tcell($para(''), $FC, 2),
+                $tcell($para(''), $FC, 2),
+                $tcell($para(''), $FR),
+            ], 700),
+            $trow([
+                $tcell($para('Unterschrift Klassenleiter/in', false, 18), $FL, 1, null, 'top', false, $SIG),
+                $tcell($para(''), $FG),
+                $tcell($para('Unterschrift Schulleiter', false, 18), $FL, 1, null, 'top', false, $SIG),
+                $tcell($para(''), $FG),
+                $tcell($para('Regierung von Ndb.', false, 18), $FR, 1, null, 'top', false, $SIG),
             ], 300),
-        ], true);
+        ], false);
 
         $body = $kopf . $outer . '<w:p/>' . $fuss;
 

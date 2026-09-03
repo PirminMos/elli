@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "930c9ab",
+      "hash": "0032d7b",
+      "date": "2026-09-03",
+      "subject": "Aendere Schuelerplan-Fuss: laengere Unterschriftszeilen, Namen aus Einstellungen"
+    },
+    {
+      "hash": "3ae5a2f",
       "date": "2026-09-03",
       "subject": "Feature: Unterschriftszeilen und Genehmiger im Lehrerplan-Export"
     },
