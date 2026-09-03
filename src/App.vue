@@ -7006,6 +7006,12 @@ export default {
     },
     handleDragEnd() {
       this.draggingId = null; // Zurücksetzen
+      // dragend feuert IMMER am Ende eines Ziehvorgangs - auch wenn ausserhalb
+      // jeder Drop-Zone losgelassen wurde. Ohne das Zuruecksetzen hier bliebe
+      // der Papierkorb (v-if="isDragging") nach einem Drop neben den Plan
+      // dauerhaft stehen, weil ihn sonst nur die Drop-Handler ausblenden.
+      this.isDragging = false;
+      this.isOverTrash = false;
     },
     async handleDrop(event, tag, stunde) {
       event.preventDefault();

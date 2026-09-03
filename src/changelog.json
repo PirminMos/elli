@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "6af244c",
+      "hash": "1f69cfb",
+      "date": "2026-09-03",
+      "subject": "Fix: Papierkorb-Overlay bleibt nach Drop neben dem Plan stehen"
+    },
+    {
+      "hash": "687562a",
       "date": "2026-09-03",
       "subject": "Aendere Schuelerplan-Kopf: Stundentafel spannt jetzt bis ganz nach oben"
     },
