@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "f522dfa",
+      "hash": "6af244c",
+      "date": "2026-09-03",
+      "subject": "Aendere Schuelerplan-Kopf: Stundentafel spannt jetzt bis ganz nach oben"
+    },
+    {
+      "hash": "25ef0fe",
       "date": "2026-09-03",
       "subject": "Aendere Schuelerplan-Kopf: Zeitraum aus Schuljahresbeginn/-ende"
     },

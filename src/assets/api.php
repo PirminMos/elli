@@ -2364,18 +2364,27 @@ if ($action === 'export_schuelerstundenplan') {
             return '<w:tbl>' . $pr . '<w:tblGrid>' . $cols . '</w:tblGrid>' . implode('', $rows) . '</w:tbl>';
         };
 
-        // --- Kopf (2-spaltig wie im Original: links Titel/Schule, rechts Zeitraum/Klasse) ---
-        $HL = 8500; $HR = 5786;
+        // --- Kopf (2-spaltig: links Titel/Schule, rechts Zeitraum/Klasse). Breite
+        //     entspricht der linken Outer-Spalte (LCOL) - die Stundentafel steht
+        //     rechts daneben und reicht bis ganz nach oben (siehe Outer weiter unten).
+        $HL = 6250; $HR = 4250;
+        // Paragraph mit zwei unterschiedlich fett gesetzten Läufen (hier für
+        // "Klasse" normal + Klassenname fett).
+        $paraMixed = function ($teile, $size = 20, $align = 'left', $after = 0) use ($run) {
+            $inner = '';
+            foreach ($teile as [$text, $bold]) $inner .= $run($text, $bold, $size);
+            return '<w:p><w:pPr><w:spacing w:after="' . $after . '"/><w:jc w:val="' . $align . '"/></w:pPr>' . $inner . '</w:p>';
+        };
         $kopf = $tbl([$HL, $HR], [
             $trow([
                 $tcell($para('Schüler-Stundenplan   Schuljahr ' . $schule['schuljahr'], true, 32, 'left'), $HL, 1, null, 'center', true),
                 $tcell($para('für die Zeit vom ' . $zeitraum, true, 22, 'left'), $HR, 1, null, 'center', true),
-            ]),
+            ], 460),
             $trow([
-                $tcell($para($schulname, true, 24, 'left'), $HL, 1, null, 'center', true),
-                $tcell($para('Klasse ' . $klasse['name'], true, 24, 'left'), $HR, 1, null, 'center', true),
-            ]),
-        ], false) . $para('', false, 8, 'left', 60);
+                $tcell($para($schulname, true, 24, 'center'), $HL, 1, null, 'center', true),
+                $tcell($paraMixed([['Klasse ', false], [$klasse['name'], true]], 24, 'left'), $HR, 1, null, 'center', true),
+            ], 370),
+        ], false);
 
         // --- Wochenraster (Zeit + 5 Tage à 2 Sub-Spalten für Differenzierung) ---
         $SUB = 866; $ZW = 1740; $DAYW = 2 * $SUB;
@@ -2431,7 +2440,7 @@ if ($action === 'export_schuelerstundenplan') {
         // --- Stundentafel (rechts) mit Bereichen: Pflichtfächer, Wahlpflichtbereich, Wahlfächer ---
         $SF = 1800; $S1 = 560; $S2 = 560; $SS = 700; $STW = $SF + $S1 + $S2 + $SS;
 
-        $stRows = [$trow([$tcell($para('Stundentafel für die Klasse ' . $klasse['name'], true, 20, 'center'), $STW, 4, 'D9D9D9')], 320)];
+        $stRows = [$trow([$tcell($para('Stundentafel für die Klasse', true, 20, 'center'), $STW, 4, 'D9D9D9')], 320)];
         // Spaltenkopf
         $stRows[] = $trow([
             $tcell($para('Fach', true, 18, 'left'), $SF, 1, 'EFEFEF'),
@@ -2470,9 +2479,10 @@ if ($action === 'export_schuelerstundenplan') {
         // Wahlpflichtbereich und Wahlfächer bekommen je genau eine Leerzeile;
         // der uebrige Platz geht an die Pflichtfächer.
         $emptyPflicht = 3; $emptyWahlpflicht = 1; $emptyWahlfaecher = 1;
-        // Zielhoehe = Wochenraster links, abzueglich der einen Legendenzeile,
-        // die jetzt unter der Stundentafel steht.
-        $ttMin = 320 + max(1, count($raster)) * 460 - 200;
+        // Zielhoehe = Kopf + Wochenraster links (die Stundentafel steht jetzt
+        // rechts neben beiden und reicht bis ganz nach oben), abzueglich der
+        // einen Legendenzeile, die unter der Stundentafel steht.
+        $ttMin = (460 + 370) + 320 + max(1, count($raster)) * 460 - 200;
         $fixH  = 320 + 300 + 300 + count($tafel) * 280 + 300 + 300 + 300; // Titel,Kopf,Pflicht-Label,Fächer,Wahlpfl-Label,Wahlf-Label,Summe
         $rest = (int)floor(($ttMin - $fixH) / 300) - ($emptyPflicht + $emptyWahlpflicht + $emptyWahlfaecher);
         if ($rest > 0) $emptyPflicht += $rest;
@@ -2498,7 +2508,7 @@ if ($action === 'export_schuelerstundenplan') {
         $LCOL = 10500; $RCOL = 3786;
         $outer = $tbl([$LCOL, $RCOL], [
             $trow([
-                $tcell($timetable . '<w:p/>', $LCOL, 1, null, 'top', true),
+                $tcell($kopf . $para('', false, 8, 'left', 60) . $timetable . '<w:p/>', $LCOL, 1, null, 'top', true),
                 $tcell($stundentafel . $legende . '<w:p/>', $RCOL, 1, null, 'top', true),
             ]),
         ], false);
@@ -2537,7 +2547,7 @@ if ($action === 'export_schuelerstundenplan') {
             ], 300),
         ], false);
 
-        $body = $kopf . $outer . '<w:p/>' . $fuss;
+        $body = $outer . '<w:p/>' . $fuss;
 
         // 7. Body in die Skelett-document.xml des Templates einsetzen (Namespaces/sectPr behalten)
         $tmpl = tempnam(sys_get_temp_dir(), 'ssp');
