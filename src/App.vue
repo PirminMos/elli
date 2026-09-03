@@ -204,9 +204,6 @@
           <div class="gp-zeilen-kopf">
             <h3>Zeilen des Gesamtplans <small>({{ gpZeilen.length }})</small></h3>
             <div class="gp-aktionen">
-              <button class="glass-btn btn-small"
-                      title="Freie Zeile ohne Klasse/Fach/Aktivität – wird leer gedruckt"
-                      @click="gpNeueZeile">+ Zeile</button>
               <button class="glass-btn btn-small" :disabled="gpMarkierte.length < 2"
                       :class="{ 'btn-disabled': gpMarkierte.length < 2 }"
                       @click="gpGruppieren">Zusammenfassen</button>
@@ -224,7 +221,6 @@
 
           <p class="gp-leer">
             Oben Klassen, Fächer oder Aktivitäten anhaken – jeder Haken wird zu einer Zeile.
-            „+ Zeile“ ergänzt eine freie Zeile ohne Zuordnung.
           </p>
 
           <div v-for="(zeile, i) in gpZeilen" :key="i" class="gp-zeile">
@@ -8681,13 +8677,6 @@ export default {
       if (!zeile.eintraege.length) return 'ohne Zuordnung – bleibt im Export leer';
       const namen = zeile.eintraege.map(e => this.gpNameVon(e));
       return namen.length > 1 ? `${namen.length} Einträge: ${namen.join(', ')}` : namen.join('');
-    },
-    // Freie Zeile ohne Klasse/Fach/Aktivität. Der Export druckt dafür einen
-    // leeren Block - praktisch für Zeilen, die von Hand ausgefüllt werden.
-    // Die Beschriftung ist vorbelegt, weil der Server Zeilen ohne Label
-    // verwirft und sie sonst beim Speichern stillschweigend verschwänden.
-    gpNeueZeile() {
-      this.gpZeilen.push({label: 'Neue Zeile', label_rechts: '', eintraege: [], markiert: false});
     },
     // Markierte Zeilen zu einer verschmelzen (z.B. MSH + MSD + HU -> eine Zeile).
     gpGruppieren() {

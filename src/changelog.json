@@ -2,7 +2,12 @@
   "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "a91c248",
+      "hash": "0c25191",
+      "date": "2026-09-03",
+      "subject": "Aendere Gesamtplan-Auswahl: \"+ Zeile\" wieder entfernt"
+    },
+    {
+      "hash": "e60de96",
       "date": "2026-09-03",
       "subject": "Feature: Gesamtplan als A3-Excel-Export mit eigener Auswahlseite"
     },
