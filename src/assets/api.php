@@ -1982,10 +1982,13 @@ if ($action === 'export_lehrerstundenplan') {
             return $s;
         };
 
-        // 1. Schule
-        $stmtS = $conn->prepare("SELECT schuljahr, adresse FROM schule WHERE id = ?");
+        // 1. Schule (inkl. Nachname/Titel/Genehmiger aus den Einstellungen im Burgermenue)
+        elli_ensure_schule_columns($conn);
+        $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger
+                                 FROM schule WHERE id = ?");
         $stmtS->execute([$schuljahr_id]);
-        $schule = $stmtS->fetch(PDO::FETCH_ASSOC) ?: ['schuljahr' => '', 'adresse' => null];
+        $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
+                  ?: ['schuljahr' => '', 'adresse' => null, 'titel' => '', 'nachname' => '', 'genehmiger' => ''];
 
         $adresse = json_decode($schule['adresse'] ?? '', true) ?: [];
         $nameZeilen = preg_split('/\r\n|\r|\n/', trim($adresse['name'] ?? ''));
@@ -2078,10 +2081,19 @@ if ($action === 'export_lehrerstundenplan') {
         }
         $upzText = $fmtStunden($e['upz']) . (count($upzTeile) ? ' (' . implode(', ', $upzTeile) . ')' : '');
 
-        // 5. Ersteller: Anzeigename aus den Einstellungen (nutzername)
-        $stmtU = $conn->prepare("SELECT wert FROM einstellungen WHERE schluessel = 'nutzername'");
-        $stmtU->execute();
-        $ersteller = $stmtU->fetchColumn() ?: '';
+        // 5. Ersteller/Genehmiger aus den Einstellungen im Burgermenue.
+        //    Ersteller = "Nachname, Titel" (schuljahrbezogen). Sind beide Felder leer,
+        //    faellt der Fuss auf den globalen Anzeigenamen zurueck.
+        $ersteller = implode(', ', array_filter([
+            trim((string)($schule['nachname'] ?? '')),
+            trim((string)($schule['titel'] ?? '')),
+        ], fn($v) => $v !== ''));
+        if ($ersteller === '') {
+            $stmtU = $conn->prepare("SELECT wert FROM einstellungen WHERE schluessel = 'nutzername'");
+            $stmtU->execute();
+            $ersteller = $stmtU->fetchColumn() ?: '';
+        }
+        $genehmiger = trim((string)($schule['genehmiger'] ?? ''));
 
         // 6. Template befüllen
         $tplPath = __DIR__ . '/lehrerstundenplan_template.docx';
@@ -2104,6 +2116,7 @@ if ($action === 'export_lehrerstundenplan') {
         $tpl->setValue('erstellt', date('d.m.y'));
         $tpl->setValue('genehmigt', date('d.m.y', strtotime('+1 day')));
         $tpl->setValue('ersteller', $esc($ersteller));
+        $tpl->setValue('genehmiger', $esc($genehmiger));
 
         // Tages-Slots: Präfix + Anzahl freier Zeilen im Template
         $slots = [

@@ -1,8 +1,13 @@
 {
-  "generated": "2026-09-02",
+  "generated": "2026-09-03",
   "commits": [
     {
-      "hash": "54262e8",
+      "hash": "930c9ab",
+      "date": "2026-09-03",
+      "subject": "Feature: Unterschriftszeilen und Genehmiger im Lehrerplan-Export"
+    },
+    {
+      "hash": "53f8cb7",
       "date": "2026-09-02",
       "subject": "Feature: Fach im Schuelerstundenplan, Lehrername kleiner darunter"
     },
