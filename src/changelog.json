@@ -1,8 +1,13 @@
 {
-  "generated": "2026-09-03",
+  "generated": "2026-09-04",
   "commits": [
     {
-      "hash": "0c25191",
+      "hash": "85eff70",
+      "date": "2026-09-04",
+      "subject": "Fix: Zweitkraft-Termine nicht mehr im Lehrerstundenplan der Erstkraft"
+    },
+    {
+      "hash": "2e73cea",
       "date": "2026-09-03",
       "subject": "Aendere Gesamtplan-Auswahl: \"+ Zeile\" wieder entfernt"
     },

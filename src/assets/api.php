@@ -1902,7 +1902,7 @@ if ($action === 'get_lehrerverfuegbarkeiten') {
         $stmt = $conn->prepare("
             select t.id AS termin_id, t.klassen_id, k.name as klassen_name, t.aktivitaet_id, a.name as aktivitaet, t.schulfach_id, s.name as fach, t.tag, t.start, t.ende, tv.kraft_id, e.name, e.upz
             from termin as t
-            join termin_verantwortliche as tv on t.id = tv.termin_id
+            join termin_verantwortliche as tv on t.id = tv.termin_id and tv.kraft_typ = 'erst'
             join erstkraft as e on e.id = tv.kraft_id
             left join klassen as k on k.id = t.klassen_id
             left join aktivitaet as a on t.aktivitaet_id = a.id
@@ -2824,7 +2824,7 @@ if ($action === 'get_lehrerstundenplan') {
                 s.id as schulfach_id, s.name as schulfach_name, s.benoetigte_raeume as schulfach_benoetigte_raeume, s.farbe as schulfach_farbe,
                 r.id as raum_id, r.name as raum_name, r.immer_verfuegbar as raum_immer_verfuegbar
                 from erstkraft as e
-                left join termin_verantwortliche as tv on tv.kraft_id = e.id
+                left join termin_verantwortliche as tv on tv.kraft_id = e.id and tv.kraft_typ = 'erst'
                 left join termin as t on t.id = tv.termin_id
                 left join aktivitaet as a on a.id = t.aktivitaet_id
                 left join schulfach as s on s.id = t.schulfach_id
@@ -3338,7 +3338,7 @@ if ($action === 'get_raum_verfuegbarkeit') {
 
                   // Verantwortlichkeit setzen (termin_verantwortliche) [cite: 145, 147, 149, 150]
                   // Sicherstellen, dass die Lehrkraft als 'erst' Kraft eingetragen ist
-                  $conn->prepare("DELETE FROM termin_verantwortliche WHERE termin_id = ? AND kraft_id = ?")->execute([$currentTerminId, $lehrerId]);
+                  $conn->prepare("DELETE FROM termin_verantwortliche WHERE termin_id = ? AND kraft_id = ? AND kraft_typ = 'erst'")->execute([$currentTerminId, $lehrerId]);
                   $sqlVerant = "INSERT INTO termin_verantwortliche (termin_id, kraft_id, kraft_typ) VALUES (?, ?, 'erst')";
                   $conn->prepare($sqlVerant)->execute([$currentTerminId, $lehrerId]);
               }
