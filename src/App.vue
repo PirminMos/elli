@@ -6660,6 +6660,12 @@ export default {
           } else {
             this.loadFromDatabase();
           }
+          // Mit der Kraft / dem Fach verschwinden auch deren Termine. Die
+          // Belegungsdaten hängen nicht an loadFromDatabase() – ohne diesen
+          // Nachzug gälte die Stunde im Browser weiter als besetzt.
+          this.loadKlassenVerfuegbarkeiten();
+          this.loadLehrerverfuegbarkeiten();
+          this.loadRaumVerfuegbarkeiten();
         } else {
           this.elliAlert("Fehler: " + result.error);
         }
@@ -10098,6 +10104,13 @@ export default {
           // 2. Bestehende Logik: Daten für das neue Jahr laden
           this.loadFromDatabase();
           this.loadLehrerverfuegbarkeiten();
+          // Klassen und ihr Zeitraster gehören ebenfalls zum Jahr. Sie hingen
+          // bisher nur am activeCategory-Watcher – der feuert aber nicht, wenn
+          // nach dem Wechsel dieselbe Kategorie erneut geöffnet wird. Dann
+          // blieben die Klassen des Vorjahres stehen, und planEinheiten() hätte
+          // die Stunden nach dem Raster des falschen Jahres verteilt.
+          this.loadSchuelerStundenPlaene();
+          this.loadKlassenVerfuegbarkeiten();
           // Räume unabhängig laden – NICHT nur als Nebeneffekt von
           // loadLehrerverfuegbarkeiten(), da dessen API-Call sonst diese
           // Liste mit sich reißen kann, wenn er fehlschlägt.

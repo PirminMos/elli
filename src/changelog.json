@@ -2,7 +2,12 @@
   "generated": "2026-09-04",
   "commits": [
     {
-      "hash": "de6b6c4",
+      "hash": "352d13a",
+      "date": "2026-09-04",
+      "subject": "Fix: Schuljahrwechsel laedt Klassen und deren Zeitraster nach"
+    },
+    {
+      "hash": "79905f9",
       "date": "2026-09-04",
       "subject": "Fix: Loeschen raeumt Abhaengigkeiten ab statt Waisen zu hinterlassen"
     },
