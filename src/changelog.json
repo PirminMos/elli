@@ -2,7 +2,12 @@
   "generated": "2026-09-04",
   "commits": [
     {
-      "hash": "8b6cc3d",
+      "hash": "c1c827d",
+      "date": "2026-09-04",
+      "subject": "Feature: Ungespeicherte Planaenderungen sichtbar machen"
+    },
+    {
+      "hash": "90b1bf6",
       "date": "2026-09-04",
       "subject": "Fix: Speichern des Lehrerstundenplans scheitert an is_differenzierung"
     },

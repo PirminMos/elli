@@ -1086,6 +1086,8 @@
             </div>
             <button
                 class="glass-btn btn-save-small"
+                :class="{ 'hat-aenderungen': planUngespeichert }"
+                :title="planUngespeichert ? 'Ungespeicherte Änderungen – jetzt speichern' : 'Plan speichern'"
                 @click="saveLehrerStundenplan"
             >
               <span class="save-icon">💾</span>
@@ -1262,6 +1264,8 @@
             </div>
             <button
                 class="glass-btn btn-save-small"
+                :class="{ 'hat-aenderungen': planUngespeichert }"
+                :title="planUngespeichert ? 'Ungespeicherte Änderungen – jetzt speichern' : 'Plan speichern'"
                 @click="saveDiensteinsatzplan"
             >
               <span class="save-icon">💾</span>
@@ -4215,6 +4219,27 @@ input:checked + .slider:before {
   margin-bottom: 10px;
 }
 
+/* Ungespeicherte Aenderungen im Plan: der Speichern-Knopf bekommt einen
+   warmen Ton und einen Punkt in der Ecke. Bewusst ohne Dauer-Animation -
+   der Hinweis soll auffallen, aber nicht die ganze Zeit blinken. */
+.btn-save-small.hat-aenderungen {
+  position: relative;
+  background: #c77c26;
+  box-shadow: 0 0 0 2px rgba(199, 124, 38, 0.45);
+}
+
+.btn-save-small.hat-aenderungen::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ffd479;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
 /* Sidebar Rechts */
 .timetable-sidebar {
   margin-top: 120px;
@@ -5536,6 +5561,9 @@ export default {
       // handleDropdownTypeahead): gesammelte Zeichen, Zeitpunkt des letzten
       // Anschlags, markierter Eintrag und die Liste, zu der das alles gehoert.
       dropdownTypeahead: {buffer: '', letzter: '', last: 0, index: -1, box: null},
+      // Fingerabdruck des Plans, wie er zuletzt vom Server kam. Weicht der
+      // aktuelle davon ab, gibt es ungespeicherte Aenderungen (planUngespeichert).
+      planSnapshot: '',
       activeTagIndex: null,
       activeVerantIndex: null, // Für das Verantwortlichen-Dropdown
       activeRaumIndex: null,   // Für das Raum-Dropdown
@@ -6079,6 +6107,20 @@ export default {
       const key = this.selectedUniqueKey || '';
       if (key.startsWith('f')) return true;
       return key.startsWith('a') && this.activeCategory === 'lehrerstundenplan';
+    },
+    // Liegen im offenen Plan Aenderungen, die noch nicht auf dem Server sind?
+    // Ein abgelegter Termin landet zunaechst nur in currentDiensteinsatzplan /
+    // currentLehrerstundenplan - erst das Disketten-Symbol schreibt ihn weg.
+    // Ohne sichtbaren Hinweis geht dieser Zwischenzustand leicht verloren.
+    planUngespeichert() {
+      if (this.view !== 'editor') return false;
+      if (this.activeCategory === 'diensteinsatzplan') {
+        return this.planFingerprint(this.currentDiensteinsatzplan) !== this.planSnapshot;
+      }
+      if (this.activeCategory === 'lehrerstundenplan') {
+        return this.planFingerprint(this.currentLehrerstundenplan, true) !== this.planSnapshot;
+      }
+      return false;
     },
     aktivitaetenMitFarbe() {
       if (!this.aktivitaeten) return [];
@@ -7940,7 +7982,10 @@ export default {
 
         if (result.success) {
           this.showStatus("Der Lehrerstundenplan wurde erfolgreich gespeichert.");
-          // Hier könntest du die Liste neu laden oder ein "Success-Glow" triggern
+          // Neu laden, damit neue Termine ihre echten DB-IDs erhalten (statt temp-UUIDs).
+          // Ohne das legt ein zweites Speichern die eben angelegten Zeilen erneut an.
+          // Der Ladevorgang merkt sich auch den neuen Stand (merkePlanStand).
+          await this.loadLehrerstundenplan(this.activeLehrerId || this.currentLehrerstundenplan.erstkraft_id);
         } else {
           // Konflikte (Raum/Kraft/Klasse) vom Server sichtbar machen
           this.showStatus(result.error || "Speichern fehlgeschlagen", "error");
@@ -8463,6 +8508,7 @@ export default {
           this.currentLehrerstundenplan = {
             ...data
           };
+          this.merkePlanStand();
         } else {
           this.showStatus(data.error || "Fehler beim Laden", "error");
         }
@@ -8768,6 +8814,7 @@ export default {
             stundentafel: plan.stundentafel || [],
             termine: plan.termine || []
           };
+          this.merkePlanStand();
         } else {
           this.currentDiensteinsatzplan = { stundentafel: [], termine: [] };
           const detail = result.message ? `: ${result.message}` : '';
@@ -9422,7 +9469,18 @@ export default {
         this.editingFach.benoetigte_raeume.push(raumId);
       }
     },
-    goBack() {
+    async goBack() {
+      // Ein Plan haelt abgelegte Termine bis zum Klick auf das Disketten-Symbol
+      // nur im Browser. Wer den Editor vorher verlaesst, verliert sie sonst
+      // kommentarlos - deshalb hier die Rueckfrage.
+      if (this.planUngespeichert) {
+        const weiter = await this.elliConfirm(
+            'Dieser Plan enthält Änderungen, die noch nicht gespeichert sind. Beim Verlassen gehen sie verloren.',
+            'Ungespeicherte Änderungen');
+        if (!weiter) return;
+        this.planSnapshot = '';
+      }
+
       // Wenn wir in der Listenansicht sind, geh zurück zur Startseite
       this.editingFach = null;
       this.editingRaum = null;
@@ -9726,6 +9784,44 @@ export default {
         start += 45;
       }
       return raster;
+    },
+    // Verdichtet einen Plan auf die Angaben, die das Speichern wegschreibt.
+    // Bewusst feldweise statt JSON.stringify: die Termine tragen je nach
+    // Herkunft (Server oder frisch abgelegt) unterschiedliche Zusatzfelder,
+    // ein roher Vergleich wuerde dauernd falschen Alarm ausloesen.
+    planFingerprint(plan, mitTafel = false) {
+      const p = plan || {};
+      const zeilen = (p.termine || []).map(t => {
+        const raeume = (t.raum_ids || (t.raeume || []).map(r => (r && r.id !== undefined) ? r.id : r) || [])
+            .map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
+        return [
+          t.tag || '',
+          String(t.start || '').slice(0, 5),
+          String(t.ende || '').slice(0, 5),
+          t.aktivitaet_id ?? '',
+          t.fach_id ?? t.schulfach_id ?? '',
+          t.klassen_id ?? '',
+          raeume.join('.'),
+          t.is_differenzierung ? 1 : 0
+        ].join('|');
+      }).sort();
+
+      if (mitTafel) {
+        const tafel = (p.lehrer_stundentafel || []).map(z => [
+          z.fach_id ?? '', z.aktivitaet_id ?? '', z.soll_stunden ?? '', z.besetzung ?? ''
+        ].join('|')).sort();
+        zeilen.push('--tafel--', ...tafel);
+      }
+      return zeilen.join('~~');
+    },
+    // Aktuellen Stand als "gespeichert" merken - nach dem Laden und nach jedem
+    // erfolgreichen Speichern (dort laedt der Plan ohnehin frisch nach).
+    merkePlanStand() {
+      if (this.activeCategory === 'diensteinsatzplan') {
+        this.planSnapshot = this.planFingerprint(this.currentDiensteinsatzplan);
+      } else if (this.activeCategory === 'lehrerstundenplan') {
+        this.planSnapshot = this.planFingerprint(this.currentLehrerstundenplan, true);
+      }
     },
     // Tastatur-Sprungmarke fuer die eigenen Dropdowns (.custom-options).
     // Ein natives <select> springt beim Tippen zum ersten passenden Eintrag -
