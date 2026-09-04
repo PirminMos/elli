@@ -2,7 +2,12 @@
   "generated": "2026-09-04",
   "commits": [
     {
-      "hash": "85eff70",
+      "hash": "9150414",
+      "date": "2026-09-04",
+      "subject": "Feature: Buchstabensprung in allen Dropdowns"
+    },
+    {
+      "hash": "93d46e9",
       "date": "2026-09-04",
       "subject": "Fix: Zweitkraft-Termine nicht mehr im Lehrerstundenplan der Erstkraft"
     },

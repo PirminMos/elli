@@ -5532,6 +5532,10 @@ export default {
       showVerantDropdown: false,
       showTagDropdown: false,
       activeDropdown: null,
+      // Zustand der Tastatur-Sprungmarke in den Dropdowns (siehe
+      // handleDropdownTypeahead): gesammelte Zeichen, Zeitpunkt des letzten
+      // Anschlags, markierter Eintrag und die Liste, zu der das alles gehoert.
+      dropdownTypeahead: {buffer: '', letzter: '', last: 0, index: -1, box: null},
       activeTagIndex: null,
       activeVerantIndex: null, // Für das Verantwortlichen-Dropdown
       activeRaumIndex: null,   // Für das Raum-Dropdown
@@ -9701,6 +9705,87 @@ export default {
       }
       return raster;
     },
+    // Tastatur-Sprungmarke fuer die eigenen Dropdowns (.custom-options).
+    // Ein natives <select> springt beim Tippen zum ersten passenden Eintrag -
+    // unsere Dropdowns sind divs und koennen das nicht von sich aus. Der
+    // Handler haengt global am Fenster und sucht sich die gerade offene Liste
+    // selbst, damit jedes Dropdown das Verhalten ohne eigene Verdrahtung hat.
+    //
+    // Verhalten wie beim <select>: mehrere Zeichen kurz hintereinander gelten
+    // als Wortanfang ("sch"), derselbe Buchstabe mehrfach blaettert durch alle
+    // Treffer mit diesem Anfangsbuchstaben. Markiert wird nur - ausgewaehlt
+    // erst mit Enter, weil ein Teil der Listen (Raeume) Mehrfachauswahl ist
+    // und ein Tastendruck dort sonst ungewollt Haken setzen wuerde.
+    handleDropdownTypeahead(e) {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      // In einem Eingabefeld gehoert die Taste dem Feld, nicht der Liste.
+      const ziel = e.target;
+      if (ziel && (ziel.tagName === 'INPUT' || ziel.tagName === 'TEXTAREA' || ziel.isContentEditable)) return;
+
+      // Die offene Liste selbst finden: alle sind per v-if gerendert, waehrend
+      // der Ausblend-Animation kann kurz noch eine alte im DOM haengen -
+      // deshalb nur sichtbare, und davon die zuletzt geoeffnete.
+      const listen = Array.from(document.querySelectorAll('.custom-options'))
+          .filter(el => el.offsetParent !== null);
+      const box = listen[listen.length - 1];
+      if (!box) return;
+
+      const optionen = Array.from(box.querySelectorAll('.custom-option'));
+      if (!optionen.length) return;
+
+      const ta = this.dropdownTypeahead;
+      // Anderes Dropdown als beim letzten Anschlag -> frisch anfangen
+      if (ta.box !== box) {
+        ta.box = box;
+        ta.buffer = '';
+        ta.letzter = '';
+        ta.index = -1;
+      }
+
+      if (e.key === 'Enter') {
+        const markiert = optionen[ta.index];
+        if (markiert) {
+          e.preventDefault();
+          markiert.click();
+        }
+        return;
+      }
+
+      // Nur druckbare Buchstaben/Ziffern, keine Steuertasten
+      if (e.key.length !== 1 || !/[\p{L}\p{N}]/u.test(e.key)) return;
+
+      // Zeichen, die kurz hintereinander kommen, bilden einen Wortanfang.
+      // Nach der Pause faengt der Wortanfang von vorn an.
+      const jetzt = Date.now();
+      if (jetzt - ta.last > 800) ta.buffer = '';
+      ta.last = jetzt;
+
+      const zeichen = e.key.toLowerCase();
+      // Derselbe Buchstabe erneut -> durch alle Treffer blaettern statt immer
+      // wieder auf demselben ersten zu landen. Das gilt bewusst auch nach der
+      // Pause: wer zweimal in Ruhe "d" drueckt, will den naechsten D-Eintrag.
+      const blaettern = ta.letzter === zeichen && ta.index >= 0
+          && (ta.buffer === '' || ta.buffer.split('').every(c => c === zeichen));
+      ta.buffer = blaettern ? zeichen : ta.buffer + zeichen;
+      ta.letzter = zeichen;
+
+      // Haken und Positionsmarken zaehlen nicht zum Namen
+      const beschriftung = el => (el.textContent || '').replace(/[✓✔📍]/g, '').trim().toLowerCase();
+
+      const start = blaettern ? ta.index + 1 : 0;
+      for (let i = 0; i < optionen.length; i++) {
+        const idx = (start + i) % optionen.length;
+        if (!beschriftung(optionen[idx]).startsWith(ta.buffer)) continue;
+
+        e.preventDefault();
+        optionen.forEach(o => o.classList.remove('active-opt'));
+        optionen[idx].classList.add('active-opt');
+        optionen[idx].scrollIntoView({block: 'nearest'});
+        ta.index = idx;
+        return;
+      }
+    },
     async saveActivity() {
       try {
         // 1. Datenquelle sicher wählen
@@ -9811,6 +9896,8 @@ export default {
   mounted() {
     history.replaceState({view: 'home'}, '', '#home');
     window.addEventListener('popstate', this.handleHardwareBack);
+    // Buchstabensprung in den Dropdowns (ersetzt, was ein natives <select> koennte)
+    window.addEventListener('keydown', this.handleDropdownTypeahead);
     this.loadSettings();
     // Still im Hintergrund schauen, ob es eine neuere Version gibt.
     this.pruefeUpdates();
@@ -9835,6 +9922,7 @@ export default {
   unmounted() {
     // Sauber aufräumen, wenn die Komponente zerstört wird
     window.removeEventListener('popstate', this.handleHardwareBack);
+    window.removeEventListener('keydown', this.handleDropdownTypeahead);
     this.stoppeStatusAbfrage();
   }
   ,
