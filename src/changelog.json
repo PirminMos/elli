@@ -2,7 +2,12 @@
   "generated": "2026-09-04",
   "commits": [
     {
-      "hash": "c1c827d",
+      "hash": "5194423",
+      "date": "2026-09-04",
+      "subject": "Fix: Mehrstuendige Eintraege folgen dem Zeitraster der Klasse"
+    },
+    {
+      "hash": "de4f2b3",
       "date": "2026-09-04",
       "subject": "Feature: Ungespeicherte Planaenderungen sichtbar machen"
     },

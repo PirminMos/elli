@@ -7051,18 +7051,15 @@ export default {
         return;
       }
 
-      // 1. Startzeit zerlegen (HH:mm)
-      const [hours, minutes] = this.lehrerPlanForm.start.split(':').map(Number);
+      // Das Ende ergibt sich aus den Schulstunden der Klasse, nicht aus
+      // Start + n*45: liegt eine Pause im Block, verschiebt sie das Ende nach
+      // hinten. Ohne Klasse bleibt es beim starren Takt (siehe planEinheiten).
+      const bloecke = this.planEinheiten(
+          this.lehrerPlanForm.klassen_id,
+          this.lehrerPlanForm.start,
+          this.stundenAuswahl || input || 1);
 
-      // 2. Gesamte Minuten berechnen (Startzeit + Einheiten * 45)
-      const dauerInMinuten = (this.stundenAuswahl || input || 1) * 45;
-      let totalMinutes = hours * 60 + minutes + dauerInMinuten;
-
-      // 3. Zurückrechnen in Stunden und Minuten (Modulo 24 für Tagesübergang)
-      const endHours = Math.floor(totalMinutes / 60) % 24;
-      const endMinutes = totalMinutes % 60;
-
-      this.lehrerPlanForm.ende = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+      this.lehrerPlanForm.ende = bloecke[bloecke.length - 1].ende;
     },
 
     // Gegenstück zum Slider: aus einem eingegebenen Ende die Anzahl der UE ableiten.
@@ -7072,12 +7069,24 @@ export default {
       if (!this.sliderGilt) return;
       if (!this.lehrerPlanForm.start || !this.lehrerPlanForm.ende) return;
 
-      const [h1, m1] = this.lehrerPlanForm.start.split(':').map(Number);
-      const [h2, m2] = this.lehrerPlanForm.ende.split(':').map(Number);
-      const dauer = (h2 * 60 + m2) - (h1 * 60 + m1);
-      if (dauer <= 0) return;
+      const start = this.lehrerPlanForm.start;
+      const ende = this.lehrerPlanForm.ende;
+      if (ende <= start) return;
 
-      this.stundenAuswahl = Math.max(1, Math.min(10, Math.round(dauer / 45)));
+      // Mit Klassenraster zaehlen wir die getroffenen Schulstunden - ein durch
+      // 45 geteilter Zeitraum wuerde die Pausen als Unterricht mitzaehlen.
+      const raster = this.klassenRaster(this.lehrerPlanForm.klassen_id);
+      let einheiten;
+      if (raster.length) {
+        einheiten = raster.filter(r => r.start < ende && r.ende > start).length;
+      } else {
+        const [h1, m1] = start.split(':').map(Number);
+        const [h2, m2] = ende.split(':').map(Number);
+        einheiten = Math.round(((h2 * 60 + m2) - (h1 * 60 + m1)) / 45);
+      }
+      if (einheiten <= 0) return;
+
+      this.stundenAuswahl = Math.max(1, Math.min(10, einheiten));
       // Ende auf das volle UE-Raster ziehen, damit die Anzeige zeigt, was gespeichert wird
       this.updateTimeFromUnits();
     },
@@ -7114,6 +7123,8 @@ export default {
       }
       // Wichtig: Dropdown schließen, wenn gewünscht
       this.activeDropdown = null;
+      // Das Ende haengt am Raster der Klasse - nach einem Wechsel neu rechnen.
+      this.updateTimeFromUnits();
     },
     // Die universelle Dropdown-Steuerung (hast du wahrscheinlich schon)
     toggleLehrerDropdown(dropdownId) {
@@ -7887,27 +7898,21 @@ export default {
       if (alsEinzelblock) {
         targetPlan.termine.push(neuerTermin);
       } else {
-        for (let i = 1; i <= this.stundenAuswahl; i++) {
-          // 1. Startzeit zerlegen (HH:mm)
-          const [hours, minutes] = startNeu.split(':').map(Number);
-          // 2. Gesamte Minuten berechnen (Startzeit + Einheiten * 45)
-          let totalMinutes = hours * 60 + minutes + 45;
-          // 3. Zurückrechnen in Stunden und Minuten (Modulo 24 für Tagesübergang)
-          const endHours = Math.floor(totalMinutes / 60) % 24;
-          const endMinutes = totalMinutes % 60;
-          endeNeu = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+        // Die Einheiten folgen den Schulstunden der Klasse; Pausen bleiben frei.
+        const bloecke = this.planEinheiten(this.lehrerPlanForm.klassen_id, startNeu, this.stundenAuswahl);
 
-          neuerTermin = {
+        bloecke.forEach(b => {
+          targetPlan.termine.push({
             ...this.lehrerPlanForm,
             ...kraftFelder,
-            start: startNeu.length === 5 ? startNeu + ":00" : startNeu,
-            ende: endeNeu.length === 5 ? endeNeu + ":00" : endeNeu,
+            tag: tagNeu,
+            start: b.start.length === 5 ? b.start + ":00" : b.start,
+            ende: b.ende.length === 5 ? b.ende + ":00" : b.ende,
             termin_id: crypto.randomUUID()
-          }
-          targetPlan.termine.push(neuerTermin);
+          });
+        });
 
-          startNeu = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
-        }
+        endeNeu = bloecke[bloecke.length - 1].ende;
       }
 
       if (this.lehrerPlanForm.klasse && this.isNewKlasse) {
@@ -9784,6 +9789,42 @@ export default {
         start += 45;
       }
       return raster;
+    },
+    // Die Schulstunden einer Klasse in zeitlicher Reihenfolge. Die Pausen
+    // stecken als Luecken zwischen den Eintraegen (z.B. 09:45-10:05).
+    klassenRaster(klassenId) {
+      const klasse = (this.klassenVerfuegbarkeiten || []).find(k => k.id == klassenId);
+      if (!klasse || !klasse.verfuegbarkeiten) return [];
+      return klasse.verfuegbarkeiten
+          .map(z => ({start: String(z.startzeit).slice(0, 5), ende: String(z.endzeit).slice(0, 5)}))
+          .sort((a, b) => a.start.localeCompare(b.start));
+    },
+    // Verteilt mehrere Unterrichtseinheiten ab einer Startzeit auf die
+    // Schulstunden der Klasse - Pausen werden dabei uebersprungen, statt sie
+    // wie beim starren 45-Minuten-Takt zu ueberbauen. Ohne Klasse oder ohne
+    // gepflegtes Raster (und wenn das Raster vorzeitig endet) bleibt es beim
+    // 45-Minuten-Takt, damit nie weniger Einheiten herauskommen als gewaehlt.
+    planEinheiten(klassenId, start, anzahl) {
+      const offen = klassenId ? this.klassenRaster(klassenId).filter(r => r.ende > start) : [];
+      const bloecke = [];
+      let s = start;
+
+      for (let i = 0; i < Math.max(1, anzahl || 1); i++) {
+        const stunde = offen.shift();
+        if (stunde) {
+          // Die erste Einheit darf dort beginnen, wo abgelegt wurde, falls das
+          // mitten in eine Rasterstunde faellt; danach zaehlt der Rasterbeginn.
+          bloecke.push({start: s > stunde.start ? s : stunde.start, ende: stunde.ende});
+          s = stunde.ende;
+        } else {
+          const [h, m] = s.split(':').map(Number);
+          const total = h * 60 + m + 45;
+          const e = String(Math.floor(total / 60) % 24).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+          bloecke.push({start: s, ende: e});
+          s = e;
+        }
+      }
+      return bloecke;
     },
     // Verdichtet einen Plan auf die Angaben, die das Speichern wegschreibt.
     // Bewusst feldweise statt JSON.stringify: die Termine tragen je nach
