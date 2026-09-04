@@ -2,7 +2,12 @@
   "generated": "2026-09-04",
   "commits": [
     {
-      "hash": "9150414",
+      "hash": "a45c823",
+      "date": "2026-09-04",
+      "subject": "Feature: Erstkraft-Aktivitaeten im Lehrerstundenplan mit UE-Slider"
+    },
+    {
+      "hash": "6154fda",
       "date": "2026-09-04",
       "subject": "Feature: Buchstabensprung in allen Dropdowns"
     },

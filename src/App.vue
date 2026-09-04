@@ -1962,7 +1962,7 @@
 
 
             <transition name="slide-up">
-              <div v-if="selectedUniqueKey.startsWith('f')" class="unit-slider-box glass-card">
+              <div v-if="sliderGilt" class="unit-slider-box glass-card">
                 <div class="slider-header"
                      :style="{display: 'flex', alignItems: 'center', width: '100%', gap: '20px', justifyContent: 'center'}">
                   <small class="ue-badge">{{ stundenAuswahl }} UE</small>
@@ -6070,6 +6070,16 @@ export default {
     aktivitaetenZweitMitFarbe() {
       return this.aktivitaetenZweit.map(a => ({...a, farbe: this.getFachFarbe(a.name) || this.getRandomPastelColor(a.name)}));
     },
+    // Gilt fuer die aktuelle Auswahl im Plan-Modal das 45-Minuten-Raster?
+    // Schulfaecher: immer. Aktivitaeten: nur im Lehrerstundenplan - dort sollen
+    // sie sich wie Schulfaecher verhalten (Slider, Aufteilung in UE). Im
+    // Diensteinsatzplan bleiben Aktivitaeten bewusst frei in der Zeit, weil ein
+    // Dienst nicht am Schulstundenraster haengt.
+    sliderGilt() {
+      const key = this.selectedUniqueKey || '';
+      if (key.startsWith('f')) return true;
+      return key.startsWith('a') && this.activeCategory === 'lehrerstundenplan';
+    },
     aktivitaetenMitFarbe() {
       if (!this.aktivitaeten) return [];
 
@@ -6995,7 +7005,7 @@ export default {
     updateTimeFromUnits(input = null) {
       // Nur rechnen, wenn es ein Fach (Typ 'f') ist und wir eine Startzeit haben.
       // Bei Aktivitäten gibt der Nutzer das Ende selbst ein, da wird nichts überschrieben.
-      if (!this.selectedUniqueKey || !this.selectedUniqueKey.startsWith('f') || !this.lehrerPlanForm.start) {
+      if (!this.sliderGilt || !this.lehrerPlanForm.start) {
         return;
       }
 
@@ -7014,9 +7024,10 @@ export default {
     },
 
     // Gegenstück zum Slider: aus einem eingegebenen Ende die Anzahl der UE ableiten.
-    // Nur für Fächer relevant, weil beim Speichern pro UE ein 45-Minuten-Termin entsteht.
+    // Relevant überall dort, wo pro UE ein 45-Minuten-Termin entsteht - also bei
+    // Fächern und bei Aktivitäten im Lehrerstundenplan.
     updateStundenFromEnde() {
-      if (!this.selectedUniqueKey || !this.selectedUniqueKey.startsWith('f')) return;
+      if (!this.sliderGilt) return;
       if (!this.lehrerPlanForm.start || !this.lehrerPlanForm.ende) return;
 
       const [h1, m1] = this.lehrerPlanForm.start.split(':').map(Number);
@@ -7596,7 +7607,12 @@ export default {
 
       console.log("benötigte Räume 2", raeume);
 
-      // UE-Anzahl aus der mitgebrachten Zeitspanne ableiten (nur Fächer)
+      // Aktivitäten im Lehrerstundenplan folgen demselben 45-Minuten-Raster wie
+      // Fächer; im Diensteinsatzplan bleiben sie frei in der Zeit.
+      const nutztSlider = type === 'f'
+          || (type === 'a' && this.activeCategory === 'lehrerstundenplan');
+
+      // UE-Anzahl aus der mitgebrachten Zeitspanne ableiten
       if (fullData.start && fullData.ende) {
         const [h1, m1] = fullData.start.split(':').map(Number);
         const [h2, m2] = fullData.ende.split(':').map(Number);
@@ -7604,7 +7620,7 @@ export default {
         const startTotal = h1 * 60 + m1;
         const endeTotal = h2 * 60 + m2;
 
-        this.stundenAuswahl = fullData.fach_id
+        this.stundenAuswahl = nutztSlider
             ? Math.max(1, Math.min(10, Math.round((endeTotal - startTotal) / 45)))
             : 1;
       }
@@ -7646,7 +7662,9 @@ export default {
           termin_id: isCopy ? crypto.randomUUID() : this.lehrerPlanForm.termin_id,
         };
       } else {
-        if (type === 'f') {
+        if (nutztSlider) {
+          // Neu aus der Werkzeugleiste: eine Einheit als Ausgangswert
+          if (dragMode === 'new') this.stundenAuswahl = 1;
           this.updateTimeFromUnits();
         } else {
           // Standardzeit für Aktivitäten – kann im Modal frei geändert werden
@@ -7672,7 +7690,7 @@ export default {
       this.selectedUniqueKey = this.lehrerPlanForm.aktivitaet_id ? 'a-' + this.lehrerPlanForm.aktivitaet_id :
           'f-' + this.lehrerPlanForm.fach_id;
 
-      if (this.selectedUniqueKey.startsWith('f')) {
+      if (this.sliderGilt) {
         // UE-Anzahl aus der gespeicherten Zeitspanne ableiten
         const [h1, m1] = this.lehrerPlanForm.start.split(':').map(Number);
         const [h2, m2] = this.lehrerPlanForm.ende.split(':').map(Number);
@@ -7819,8 +7837,12 @@ export default {
         termin_id: crypto.randomUUID()
       };
 
-      // 2. Neues Objekt bauen
-      if (this.lehrerPlanForm.aktivitaet) {
+      // 2. Neues Objekt bauen. Ein Eintrag mit UE-Raster zerfällt in einzelne
+      // 45-Minuten-Termine (wie im Export je Schulstunde ausgewiesen), ein
+      // Dienst-Einsatz bleibt ein zusammenhängender Block.
+      const alsEinzelblock = this.lehrerPlanForm.aktivitaet
+          && this.activeCategory !== 'lehrerstundenplan';
+      if (alsEinzelblock) {
         targetPlan.termine.push(neuerTermin);
       } else {
         for (let i = 1; i <= this.stundenAuswahl; i++) {
