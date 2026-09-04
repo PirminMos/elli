@@ -2,7 +2,12 @@
   "generated": "2026-09-04",
   "commits": [
     {
-      "hash": "a45c823",
+      "hash": "8b6cc3d",
+      "date": "2026-09-04",
+      "subject": "Fix: Speichern des Lehrerstundenplans scheitert an is_differenzierung"
+    },
+    {
+      "hash": "f71e881",
       "date": "2026-09-04",
       "subject": "Feature: Erstkraft-Aktivitaeten im Lehrerstundenplan mit UE-Slider"
     },

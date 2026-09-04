@@ -3302,14 +3302,24 @@ if ($action === 'get_raum_verfuegbarkeit') {
               foreach ($data['termine'] as $t) {
                   $isNew = !isset($t['termin_id']) || !is_numeric($t['termin_id']);
 
+                  // Werte normalisieren wie im Diensteinsatzplan. Wichtig vor allem
+                  // bei is_differenzierung: die Checkbox im Modal liefert ein echtes
+                  // false, das PDO als '' bindet - MariaDB weist das fuer eine
+                  // INT-Spalte ab (SQLSTATE 22007) und die ganze Transaktion faellt.
+                  $klassenId = !empty($t['klassen_id']) ? $t['klassen_id'] : null;
+                  $aktId     = !empty($t['aktivitaet_id']) ? $t['aktivitaet_id'] : null;
+                  $fachId    = !empty($t['fach_id']) ? $t['fach_id'] : null;
+                  $stundenId = !empty($t['stunden_id']) ? $t['stunden_id'] : null;
+                  $isDiff    = !empty($t['is_differenzierung']) ? 1 : 0;
+
                   if ($isNew) {
                       // Neuen Termin anlegen
                       $sqlTermin = "INSERT INTO termin (klassen_id, aktivitaet_id, schulfach_id, tag, stunden_id, start, ende, is_differenzierung)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
                       $stmtT = $conn->prepare($sqlTermin);
                       $stmtT->execute([
-                          $t['klassen_id'], $t['aktivitaet_id'], $t['fach_id'],
-                          $t['tag'], $t['stunden_id'], $t['start'], $t['ende'], $t['is_differenzierung']
+                          $klassenId, $aktId, $fachId,
+                          $t['tag'], $stundenId, $t['start'], $t['ende'], $isDiff
                       ]);
                       $currentTerminId = $conn->lastInsertId();
                   } else {
@@ -3320,8 +3330,8 @@ if ($action === 'get_raum_verfuegbarkeit') {
                                       tag = ?, stunden_id = ?, start = ?, ende = ?, is_differenzierung = ?
                                     WHERE id = ?";
                       $conn->prepare($sqlTermin)->execute([
-                          $t['klassen_id'], $t['aktivitaet_id'], $t['fach_id'],
-                          $t['tag'], $t['stunden_id'], $t['start'], $t['ende'], $t['is_differenzierung'],
+                          $klassenId, $aktId, $fachId,
+                          $t['tag'], $stundenId, $t['start'], $t['ende'], $isDiff,
                           $currentTerminId
                       ]);
                   }
