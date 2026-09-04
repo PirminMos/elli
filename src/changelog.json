@@ -2,7 +2,12 @@
   "generated": "2026-09-04",
   "commits": [
     {
-      "hash": "5194423",
+      "hash": "de6b6c4",
+      "date": "2026-09-04",
+      "subject": "Fix: Loeschen raeumt Abhaengigkeiten ab statt Waisen zu hinterlassen"
+    },
+    {
+      "hash": "413569a",
       "date": "2026-09-04",
       "subject": "Fix: Mehrstuendige Eintraege folgen dem Zeitraster der Klasse"
     },

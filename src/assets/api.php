@@ -521,6 +521,56 @@ if ($action === 'copy_schuljahr_data') {
 
 // Stellt sicher, dass die Template-Tabellen existieren (auch auf bestehenden
 // DBs ohne Migrationssystem).
+/**
+ * Raeumt Termine ab, die nach dem Entfernen einer Verknuepfung niemandem mehr
+ * gehoeren.
+ *
+ * Ein Termin haengt ueber termin_verantwortliche an einer Erst- oder
+ * Zweitkraft. Loescht man die Kraft, bleibt der Termin sonst als Waise stehen:
+ * in keinem Plan sichtbar, aber weiterhin im Stundenplan der Klasse - er
+ * blockiert die Stunde dauerhaft und ist ueber die Oberflaeche nicht mehr
+ * erreichbar. Deshalb faellt jeder Termin weg, fuer den keine Verantwortlichkeit
+ * mehr existiert. Termine mit weiterer Besetzung (z.B. Doppelbesetzung durch
+ * eine zweite Kraft) bleiben bewusst erhalten.
+ */
+function elli_loesche_verwaiste_termine(PDO $conn, array $terminIds): void {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $terminIds))));
+    if (!$ids) return;
+
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $conn->prepare("SELECT DISTINCT termin_id FROM termin_verantwortliche WHERE termin_id IN ($in)");
+    $stmt->execute($ids);
+    $nochBesetzt = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+    $waisen = array_values(array_diff($ids, $nochBesetzt));
+    if (!$waisen) return;
+
+    $inW = implode(',', array_fill(0, count($waisen), '?'));
+    $conn->prepare("DELETE FROM termin_raeume WHERE termin_id IN ($inW)")->execute($waisen);
+    $conn->prepare("DELETE FROM termin WHERE id IN ($inW)")->execute($waisen);
+}
+
+/** Termin-IDs, an denen eine Kraft als verantwortlich eingetragen ist. */
+function elli_termine_der_kraft(PDO $conn, int $kraftId, string $kraftTyp): array {
+    $stmt = $conn->prepare("SELECT termin_id FROM termin_verantwortliche WHERE kraft_id = ? AND kraft_typ = ?");
+    $stmt->execute([$kraftId, $kraftTyp]);
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/** Einen geloeschten Raum aus schulfach.benoetigte_raeume (JSON-Array) nehmen. */
+function elli_raum_aus_faechern_loesen(PDO $conn, int $raumId): void {
+    $rows = $conn->query("SELECT id, benoetigte_raeume FROM schulfach")->fetchAll(PDO::FETCH_ASSOC);
+    $upd = $conn->prepare("UPDATE schulfach SET benoetigte_raeume = ? WHERE id = ?");
+    foreach ($rows as $r) {
+        $liste = json_decode((string)$r['benoetigte_raeume'], true);
+        if (!is_array($liste)) continue;
+        $neu = array_values(array_filter($liste, fn($v) => (int)$v !== $raumId));
+        if (count($neu) !== count($liste)) {
+            $upd->execute([json_encode($neu), $r['id']]);
+        }
+    }
+}
+
 function elli_ensure_template_tables(PDO $conn) {
     $conn->exec("CREATE TABLE IF NOT EXISTS stundentafel_template (
         id INT(11) NOT NULL AUTO_INCREMENT,
@@ -1414,34 +1464,93 @@ if ($action === 'delete_element') {
         try {
             $conn->beginTransaction();
 
+            // Jeder Zweig raeumt seine Abhaengigkeiten selbst ab. Ein blosses
+            // DELETE auf der Haupttabelle hinterlaesst sonst Zeilen, die
+            // niemandem mehr gehoeren - vor allem Termine, die weiterhin im
+            // Stundenplan der Klasse stehen, dort die Stunde blockieren und
+            // ueber die Oberflaeche nicht mehr auffindbar sind.
+            $id = (int)$id;
+
             if ($type === 'schuelerstundenplan') {
-                // 1. Abhängigkeiten in termin_verantwortliche löschen
-                $stmt = $conn->prepare("DELETE FROM termin_verantwortliche WHERE termin_id IN (SELECT id FROM termin WHERE klassen_id = ?)");
-                $stmt->execute([$id]);
+                // Klasse: ihre Termine samt Verantwortlichkeiten und Raeumen
+                $stmtT = $conn->prepare("SELECT id FROM termin WHERE klassen_id = ?");
+                $stmtT->execute([$id]);
+                $terminIds = array_map('intval', $stmtT->fetchAll(PDO::FETCH_COLUMN));
 
-                // 2. Termine löschen
-                $stmt = $conn->prepare("DELETE FROM termin WHERE klassen_id = ?");
-                $stmt->execute([$id]);
+                if ($terminIds) {
+                    $in = implode(',', array_fill(0, count($terminIds), '?'));
+                    $conn->prepare("DELETE FROM termin_verantwortliche WHERE termin_id IN ($in)")->execute($terminIds);
+                    $conn->prepare("DELETE FROM termin_raeume WHERE termin_id IN ($in)")->execute($terminIds);
+                    $conn->prepare("DELETE FROM termin WHERE id IN ($in)")->execute($terminIds);
+                }
 
-                // 3. Stundentafel löschen (Spalte heißt laut deiner txt 'klasse_id')
-                $stmt = $conn->prepare("DELETE FROM stundentafel WHERE klasse_id = ?");
-                $stmt->execute([$id]);
+                $conn->prepare("DELETE FROM stundentafel WHERE klasse_id = ?")->execute([$id]);
+                $conn->prepare("DELETE FROM klassen_zeitraster WHERE klasse_id = ?")->execute([$id]);
+                $conn->prepare("DELETE FROM gesamtplan_zeile_eintrag WHERE quelle = 'klasse' AND quelle_id = ?")->execute([$id]);
+                $conn->prepare("DELETE FROM klassen WHERE id = ?")->execute([$id]);
 
-                // 4. Zeitraster löschen
-                $stmt = $conn->prepare("DELETE FROM klassen_zeitraster WHERE klasse_id = ?");
-                $stmt->execute([$id]);
-
-                // 5. Die Klasse selbst löschen
-                $stmt = $conn->prepare("DELETE FROM klassen WHERE id = ?");
-                $stmt->execute([$id]);
             } elseif ($type === 'stundentafel') {
-                // Template + seine Eintraege löschen
+                // Template + seine Eintraege loeschen
                 $conn->prepare("DELETE FROM stundentafel_template_eintrag WHERE template_id = ?")->execute([$id]);
                 $conn->prepare("DELETE FROM stundentafel_template WHERE id = ?")->execute([$id]);
+
+            } elseif ($type === 'erstkraft' || $type === 'zweitkraft') {
+                // Lehrkraft: Verantwortlichkeiten loesen, danach die Termine
+                // abraeumen, die dadurch niemandem mehr gehoeren. Termine mit
+                // weiterer Besetzung bleiben stehen.
+                $kraftTyp  = $type === 'erstkraft' ? 'erst' : 'zweit';
+                $terminIds = elli_termine_der_kraft($conn, $id, $kraftTyp);
+
+                $conn->prepare("DELETE FROM termin_verantwortliche WHERE kraft_id = ? AND kraft_typ = ?")
+                     ->execute([$id, $kraftTyp]);
+                elli_loesche_verwaiste_termine($conn, $terminIds);
+
+                if ($type === 'erstkraft') {
+                    $conn->prepare("DELETE FROM lehrer_stundentafel WHERE erstkraft_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM erstkraft WHERE id = ?")->execute([$id]);
+                } else {
+                    $conn->prepare("DELETE FROM zweitkraft_stundentafel WHERE zweitkraft_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM zweitkraft WHERE id = ?")->execute([$id]);
+                }
+
+            } elseif ($type === 'raum') {
+                // Raum: nur die Verknuepfungen loesen. Eine Stunde ohne Raum
+                // bleibt eine Stunde - Termine werden hier nicht geloescht.
+                $conn->prepare("DELETE FROM raum_verfuegbarkeit WHERE raum_id = ?")->execute([$id]);
+                $conn->prepare("DELETE FROM termin_raeume WHERE raum_id = ?")->execute([$id]);
+                elli_raum_aus_faechern_loesen($conn, $id);
+                $conn->prepare("DELETE FROM raum WHERE id = ?")->execute([$id]);
+
+            } elseif ($type === 'schulfach' || $type === 'aktivitaet') {
+                // Fach/Aktivitaet: die zugehoerigen Termine ergeben ohne sie
+                // keinen Sinn mehr und wuerden sonst namenlos weiterblockieren.
+                $spalte = $type === 'schulfach' ? 'schulfach_id' : 'aktivitaet_id';
+                $stmtT  = $conn->prepare("SELECT id FROM termin WHERE $spalte = ?");
+                $stmtT->execute([$id]);
+                $terminIds = array_map('intval', $stmtT->fetchAll(PDO::FETCH_COLUMN));
+
+                if ($terminIds) {
+                    $in = implode(',', array_fill(0, count($terminIds), '?'));
+                    $conn->prepare("DELETE FROM termin_verantwortliche WHERE termin_id IN ($in)")->execute($terminIds);
+                    $conn->prepare("DELETE FROM termin_raeume WHERE termin_id IN ($in)")->execute($terminIds);
+                    $conn->prepare("DELETE FROM termin WHERE id IN ($in)")->execute($terminIds);
+                }
+
+                if ($type === 'schulfach') {
+                    $conn->prepare("DELETE FROM lehrer_stundentafel WHERE fach_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM stundentafel WHERE fach_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM stundentafel_template_eintrag WHERE fach_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM gesamtplan_zeile_eintrag WHERE quelle = 'fach' AND quelle_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM schulfach WHERE id = ?")->execute([$id]);
+                } else {
+                    $conn->prepare("DELETE FROM lehrer_stundentafel WHERE aktivitaet_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM zweitkraft_stundentafel WHERE aktivitaet_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM gesamtplan_zeile_eintrag WHERE quelle = 'aktivitaet' AND quelle_id = ?")->execute([$id]);
+                    $conn->prepare("DELETE FROM aktivitaet WHERE id = ?")->execute([$id]);
+                }
+
             } else {
-                // Standard-Löschung für einfache Stammdaten
-                $stmt = $conn->prepare("DELETE FROM `$table` WHERE id = ?");
-                $stmt->execute([$id]);
+                $conn->prepare("DELETE FROM `$table` WHERE id = ?")->execute([$id]);
             }
 
             $conn->commit();
