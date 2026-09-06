@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "4d3cfe9",
+      "hash": "1fa158e",
+      "date": "2026-09-06",
+      "subject": "Feature: Diensteinsatzplan weist Tagesarbeitszeit je Tag aus"
+    },
+    {
+      "hash": "e0c6c9e",
       "date": "2026-09-06",
       "subject": "Feature: Startzeit zieht das Ende auf Start + 45 Minuten"
     },

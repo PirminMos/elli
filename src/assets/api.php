@@ -351,7 +351,11 @@ function elli_berufe_anzeige(array $z): string {
         $form = elli_beruf_form($z[$spalte] ?? '', $maennlich);
         if ($form !== '') $teile[] = $form;
     }
-    return implode(', ', $teile);
+    if (count($teile) < 2) return implode('', $teile);
+    // Die letzten beiden Berufe werden mit "und" verbunden statt mit Komma:
+    // "IB und KiPfl", bei dreien "Erz, IB und KiPfl".
+    $letzter = array_pop($teile);
+    return implode(', ', $teile) . ' und ' . $letzter;
 }
 
 if ($action === 'get_schuljahre') {
@@ -3658,6 +3662,14 @@ if ($action === 'get_raum_verfuegbarkeit') {
               return $s;
           };
 
+          // Tagessumme mit mindestens einer Nachkommastelle: 6 -> "6,0",
+          // 4,5 -> "4,5", 3,75 -> "3,75" (wie im Vorlagenblatt ausgewiesen).
+          $fmtTagesstunden = function ($h) {
+              $s = number_format((float)$h, 2, ',', '');
+              if (substr($s, -1) === '0') $s = substr($s, 0, -1);
+              return $s;
+          };
+
           // 1. Schule (Schuljahr + Adresse als JSON {name, strasse, stadt}) samt
           //    Nachname/Titel/Genehmiger aus den Einstellungen im Burgermenue
           elli_ensure_schule_columns($conn);
@@ -3769,17 +3781,31 @@ if ($action === 'get_raum_verfuegbarkeit') {
           // als maennlich gefuehrten Zweitkraft ohne "in".
           $tpl->setValue('unterschrift', 'Unterschrift Mitarbeiter' . (!empty($z['maennlich']) ? '' : 'in'));
 
-          // Tages-Slots: Präfix + Anzahl freier Zeilen im Template
+          // Tages-Slots: Präfix + Anzahl freier Zeilen im Template + Platzhalter
+          // der Tagesarbeitszeit. Die unterste Zeile jedes Tagesblocks weist die
+          // Tagessumme aus und steht deshalb nicht mehr als Termin-Zeile bereit.
           $slots = [
-              'Montag'     => ['m', 11],
-              'Dienstag'   => ['di', 10],
-              'Mittwoch'   => ['mi', 10],
-              'Donnerstag' => ['d', 11],
-              'Freitag'    => ['f', 10],
+              'Montag'     => ['m',  10, 'taz_mo'],
+              'Dienstag'   => ['di',  9, 'taz_di'],
+              'Mittwoch'   => ['mi',  9, 'taz_mi'],
+              'Donnerstag' => ['d',  10, 'taz_do'],
+              'Freitag'    => ['f',   9, 'taz_fr'],
           ];
 
-          foreach ($slots as $tag => [$prefix, $anzahl]) {
+          foreach ($slots as $tag => [$prefix, $anzahl, $tazFeld]) {
               $liste = $byTag[$tag] ?? [];
+
+              // Tagesarbeitszeit = Summe der geleisteten Termine. Weil je Termin
+              // gerechnet wird, zaehlt eine Luecke dazwischen (Mittagspause) nicht
+              // mit. Summiert wird ueber ALLE Termine des Tages - auch ueber die,
+              // fuer die im Template keine Zeile mehr frei ist.
+              $tagesSumme = 0.0;
+              foreach ($liste as $t) {
+                  $d = (strtotime($t['ende']) - strtotime($t['start'])) / 3600;
+                  if ($d > 0) $tagesSumme += $d;
+              }
+              $tpl->setValue($tazFeld, $tagesSumme > 0 ? $esc($fmtTagesstunden($tagesSumme)) : '');
+
               for ($i = 1; $i <= $anzahl; $i++) {
                   $t = $liste[$i - 1] ?? null;
                   if ($t) {
