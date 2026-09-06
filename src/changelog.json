@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "46cc002",
+      "hash": "1a8815e",
+      "date": "2026-09-06",
+      "subject": "Fix: \"durc\" im Lehrerstundenplan heisst wieder \"durch\""
+    },
+    {
+      "hash": "196d71b",
       "date": "2026-09-06",
       "subject": "Fix: Lehrerstundenplan passt wieder auf eine Seite"
     },
