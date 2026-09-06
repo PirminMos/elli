@@ -43,13 +43,20 @@ services:
       BACKUP_KEEP: "${BACKUP_KEEP:-5}"
       # Damit die Oberflaeche den Pfad nennen kann, unter dem der Nutzer die
       # Datei tatsaechlich findet - "/backups" ist nur die Sicht im Container.
-      BACKUP_HOST_DIR: "${PWD}/backups"
+      BACKUP_HOST_DIR: "${ELLI_HOST_DIR:-${PWD}}/backups"
     volumes:
       # Schreibend eingebunden: Die Oberflaeche listet vorhandene Sicherungen
       # (Erststart-Import) und legt auf Knopfdruck selbst eine an. Geschrieben
       # und geloescht wird ausschliesslich nach dem Muster "elli-*.sql", damit
       # der web-Container nichts anderes im Verzeichnis anfassen kann.
-      - ./backups:/backups
+      # ELLI_HOST_DIR statt "./": Der Update-Dienst ruft "docker compose" aus
+      # seinem eigenen Container heraus auf. Ein relativer Pfad wuerde dort
+      # gegen /repo aufgeloest und dem Docker-Daemon als Host-Pfad uebergeben.
+      # Der Daemon laeuft aber auf dem Host und legte dann ein leeres,
+      # root-eigenes Verzeichnis an, statt den echten Ordner einzubinden.
+      # update.sh setzt die Variable auf den Host-Pfad des Projekts; beim
+      # normalen "docker compose up" vom Host bleibt sie leer und "." greift.
+      - ${ELLI_HOST_DIR:-.}/backups:/backups
     depends_on:
       db:
         condition: service_healthy
@@ -96,7 +103,14 @@ services:
       BACKUP_INTERVAL: "${BACKUP_INTERVAL:-86400}"   # Standard: taeglich (24 Stunden)
       BACKUP_KEEP: "${BACKUP_KEEP:-5}"               # Standard: 5 Dateien behalten
     volumes:
-      - ./backups:/backups
+      # ELLI_HOST_DIR statt "./": Der Update-Dienst ruft "docker compose" aus
+      # seinem eigenen Container heraus auf. Ein relativer Pfad wuerde dort
+      # gegen /repo aufgeloest und dem Docker-Daemon als Host-Pfad uebergeben.
+      # Der Daemon laeuft aber auf dem Host und legte dann ein leeres,
+      # root-eigenes Verzeichnis an, statt den echten Ordner einzubinden.
+      # update.sh setzt die Variable auf den Host-Pfad des Projekts; beim
+      # normalen "docker compose up" vom Host bleibt sie leer und "." greift.
+      - ${ELLI_HOST_DIR:-.}/backups:/backups
       - ./docker/backup/backup-loop.sh:/backup-loop.sh:ro
     entrypoint: ["sh", "/backup-loop.sh"]
     depends_on:

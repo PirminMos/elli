@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "f0c9e4f",
+      "hash": "ec2aa29",
+      "date": "2026-09-06",
+      "subject": "Fix: Sicherungsordner bleibt auch nach einem Update eingebunden"
+    },
+    {
+      "hash": "0c2b7ba",
       "date": "2026-09-06",
       "subject": "Feature: Sicherung auf Knopfdruck vom Startbildschirm"
     },

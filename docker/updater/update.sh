@@ -52,6 +52,17 @@ PROJEKT=$(docker inspect "$(hostname)" --format '{{index .Config.Labels "com.doc
 [ -n "$PROJEKT" ] || PROJEKT=elli
 echo "Stack: $PROJEKT"
 
+# Host-Pfad des Projekts ermitteln und an Compose weiterreichen.
+# Compose loest relative Pfade gegen das Verzeichnis der Compose-Datei auf -
+# von hier aus also gegen /repo. Der Docker-Daemon laeuft aber auf dem Host
+# und kennt /repo nicht: Bind-Mounts zeigten ins Leere, und Docker legte
+# stattdessen leere, root-eigene Verzeichnisse an. Den echten Pfad lesen wir
+# aus unserem eigenen /repo-Mount ab.
+ELLI_HOST_DIR=$(docker inspect "$(hostname)"     --format '{{range .Mounts}}{{if eq .Destination "/repo"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
+[ -n "$ELLI_HOST_DIR" ] || abbruch "Host-Pfad des Projektordners nicht ermittelbar - kein /repo-Mount gefunden."
+export ELLI_HOST_DIR
+echo "Projektordner auf dem Host: $ELLI_HOST_DIR"
+
 # .env nur mitgeben, wenn vorhanden – sonst wuerden eigene Passwoerter
 # durch die Standardwerte aus der docker-compose.yml ersetzt.
 if [ -f "$REPO/.env" ]; then

@@ -1015,10 +1015,26 @@ if ($action === 'create_backup') {
             );
         }
         if (!is_writable(ELLI_BACKUP_DIR)) {
-            throw new RuntimeException(
-                'Das Sicherungsverzeichnis ist schreibgeschuetzt eingebunden. Der Eintrag in '
-                . 'der docker-compose.yml darf beim Dienst "web" nicht auf ":ro" enden.'
-            );
+            // Die Ursache ist nicht eindeutig, deshalb die Fakten mitgeben
+            // statt eine einzelne Vermutung zu behaupten.
+            $rechte = substr(sprintf('%o', (int) @fileperms(ELLI_BACKUP_DIR)), -4);
+            $leer   = count(glob(ELLI_BACKUP_DIR . '/*.sql') ?: []) === 0;
+
+            $meldung = 'Das Sicherungsverzeichnis ist fuer den Webserver nicht beschreibbar '
+                . '(Rechte ' . $rechte . ').';
+            if ($leer) {
+                // Ein leeres Verzeichnis deutet darauf hin, dass gar nicht der
+                // echte Ordner eingebunden ist, sondern ein von Docker
+                // angelegter Ersatz - das passiert, wenn der Container mit
+                // einem Pfad erzeugt wurde, den es auf dem Host nicht gibt.
+                $meldung .= ' Es ist ausserdem leer - vermutlich ist nicht der Projektordner '
+                    . 'eingebunden, sondern ein leeres Ersatzverzeichnis.';
+            }
+            $meldung .= ' Abhilfe: "docker compose up -d web" im Projektordner auf dem Host '
+                . 'ausfuehren. Falls der Eintrag in der docker-compose.yml beim Dienst "web" '
+                . 'auf ":ro" endet, muss das zusaetzlich entfernt werden.';
+
+            throw new RuntimeException($meldung);
         }
 
         $behalten = (int) (getenv('BACKUP_KEEP') ?: 5);
