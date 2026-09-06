@@ -1889,7 +1889,7 @@
                     class="custom-select-trigger glass-input-large"
                     :class="{
                       'rotate': activeDropdown === 'raum-edit',
-                      'border-error': lehrerPlanForm.raum_ids.length > 0 && !isLehrerRaumVerfuegbar(lehrerPlanForm)
+                      'border-error': (lehrerPlanForm.raum_ids || []).length > 0 && !isLehrerRaumVerfuegbar(lehrerPlanForm)
                   }"
                     @click.stop="toggleLehrerDropdown('raum-edit')"
                 >
@@ -1902,11 +1902,11 @@
                 <div v-if="activeDropdown === 'raum-edit'" class="custom-options glass shadow-lg">
                   <div v-for="r in raeume" :key="r.id"
                        class="custom-option select-row-layout"
-                       :class="{ selected: lehrerPlanForm.raum_ids.includes(r.id) }"
+                       :class="{ selected: (lehrerPlanForm.raum_ids || []).includes(r.id) }"
                        @click.stop="toggleRaumSelection(r.id)"
                   >
                     {{ r.name }}
-                    <span v-if="lehrerPlanForm.raum_ids.includes(r.id)" class="check-mark">✓</span>
+                    <span v-if="(lehrerPlanForm.raum_ids || []).includes(r.id)" class="check-mark">✓</span>
                   </div>
                 </div>
               </transition>
@@ -2007,36 +2007,79 @@
         </div>
 
         <div class="modal-body">
-          <div class="input-group" style="display: flex; flex-direction: column; position: relative;">
-            <div class="zeile lehrerstundenplan" style="display: flex; align-items: center; min-height: 32px;">
-              <label>Raum:</label>
-            </div>
-            <div class="custom-select-wrapper" style="position: relative;">
-              <div
-                  class="custom-select-trigger glass-input-large"
-                  :class="{
-                    'rotate': activeDropdown === 'dienst-raum-edit',
-                    'border-error': lehrerPlanForm.raum_ids.length > 0 && !isLehrerRaumVerfuegbar(lehrerPlanForm)
-                }"
-                  @click.stop="toggleLehrerDropdown('dienst-raum-edit')"
-              >
-                <span>{{ getLehrerRaumNamen(lehrerPlanForm) }}</span>
-                <span class="arrow-down" :class="{ 'rotate': activeDropdown === 'dienst-raum-edit' }">▼</span>
+          <div class="input-row-triple">
+            <div class="input-group" style="display: flex; flex-direction: column;">
+              <div class="zeile lehrerstundenplan" style="display: flex; align-items: center; min-height: 32px;">
+                <label>Klasse:</label>
+                <button v-if="!isNewKlasse" class="text-btn-tiny" @click="isNewKlasse = true">+ Neue Klasse</button>
+                <button v-else class="text-btn-tiny" @click="isNewKlasse = false">Zurück zur Liste</button>
               </div>
+
+              <div v-if="!isNewKlasse" class="custom-select-wrapper" style="position: relative;">
+                <div class="custom-select-trigger glass-input-large" @click.stop="toggleLehrerDropdown('dienst-klasse')">
+              <span v-if="lehrerPlanForm.klassen_id || lehrerPlanForm.klasse" class="selected-text-active">
+                {{ lehrerPlanForm.klasse || getSelectedKlassenName }}
+              </span>
+                  <span v-else class="placeholder">Klasse wählen...</span>
+                  <span class="arrow-down" :class="{ 'rotate': activeDropdown === 'dienst-klasse' }">▼</span>
+                </div>
+
+                <transition name="fade">
+                  <div v-if="activeDropdown === 'dienst-klasse'" class="custom-options glass shadow-lg">
+                    <div v-for="k in schuelerstundenplaene" :key="k.id"
+                         class="custom-option select-row-layout"
+                         :class="{ 'is-selected': lehrerPlanForm.klassen_id === k.id }"
+                         @click="selectLehrerKlasse(k)">
+                      <span class="option-name">{{ k.name }}</span>
+                      <div class="check-icon-right" v-if="lehrerPlanForm.klassen_id === k.id">✔</div>
+                    </div>
+                  </div>
+                </transition>
+              </div>
+              <input v-else type="text" v-model="lehrerPlanForm.klasse" placeholder="Name der neuen Klasse..."
+                     class="glass-input-large">
             </div>
 
-            <transition name="fade-up">
-              <div v-if="activeDropdown === 'dienst-raum-edit'" class="custom-options glass shadow-lg">
-                <div v-for="r in raeume" :key="r.id"
-                     class="custom-option select-row-layout"
-                     :class="{ selected: lehrerPlanForm.raum_ids.includes(r.id) }"
-                     @click.stop="toggleRaumSelection(r.id)"
+            <div class="input-group" style="display: flex; flex-direction: column; position: relative;">
+              <div class="zeile lehrerstundenplan" style="display: flex; align-items: center; min-height: 32px;">
+                <label>Raum:</label>
+              </div>
+              <div class="custom-select-wrapper" style="position: relative;">
+                <div
+                    class="custom-select-trigger glass-input-large"
+                    :class="{
+                      'rotate': activeDropdown === 'dienst-raum-edit',
+                      'border-error': (lehrerPlanForm.raum_ids || []).length > 0 && !isLehrerRaumVerfuegbar(lehrerPlanForm)
+                  }"
+                    @click.stop="toggleLehrerDropdown('dienst-raum-edit')"
                 >
-                  {{ r.name }}
-                  <span v-if="lehrerPlanForm.raum_ids.includes(r.id)" class="check-mark">✓</span>
+                  <span>{{ getLehrerRaumNamen(lehrerPlanForm) }}</span>
+                  <span class="arrow-down" :class="{ 'rotate': activeDropdown === 'dienst-raum-edit' }">▼</span>
                 </div>
               </div>
-            </transition>
+
+              <transition name="fade-up">
+                <div v-if="activeDropdown === 'dienst-raum-edit'" class="custom-options glass shadow-lg">
+                  <div v-for="r in raeume" :key="r.id"
+                       class="custom-option select-row-layout"
+                       :class="{ selected: (lehrerPlanForm.raum_ids || []).includes(r.id) }"
+                       @click.stop="toggleRaumSelection(r.id)"
+                  >
+                    {{ r.name }}
+                    <span v-if="(lehrerPlanForm.raum_ids || []).includes(r.id)" class="check-mark">✓</span>
+                  </div>
+                </div>
+              </transition>
+            </div>
+
+            <div class="input-group"
+                 :style="{display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', gap: '20px'}">
+              <label :style="{color:'white'}">Äußere Differenzierung?</label>
+              <label class="switch">
+                <input type="checkbox" v-model="lehrerPlanForm.is_differenzierung">
+                <span class="slider round"></span>
+              </label>
+            </div>
           </div>
 
           <div class="input-group">
@@ -7146,7 +7189,8 @@ export default {
     },
     //Selektion der Räume umschalten
     toggleRaumSelection(raumId) {
-      console.log("raeume", this.raeume);
+      // Termine ohne Raumliste (Alt-Daten) sollen hier nicht stolpern.
+      if (!Array.isArray(this.lehrerPlanForm.raum_ids)) this.lehrerPlanForm.raum_ids = [];
       const index = this.lehrerPlanForm.raum_ids.indexOf(raumId);
       if (index > -1) {
         this.lehrerPlanForm.raum_ids.splice(index, 1);
@@ -7676,7 +7720,13 @@ export default {
 
       console.log("benötigte Räume", fullData);
 
-      const raeume = fullData.raum_ids ? fullData.raum_ids : benoetigte_raeume ? JSON.parse(benoetigte_raeume) : [];
+      // Beim Verschieben bringt der Termin seine Raeume selbst mit (Lehrerplan
+      // als raum_ids, Diensteinsatzplan als Objektliste 'raeume'). Nur beim
+      // Neuanlegen greifen die am Fach hinterlegten Pflichtraeume.
+      const mitgebrachteRaeume = this.raumIdsAusTermin(fullData);
+      const raeume = mitgebrachteRaeume.length
+          ? mitgebrachteRaeume
+          : (benoetigte_raeume ? JSON.parse(benoetigte_raeume) : []);
 
       console.log("benötigte Räume 2", raeume);
 
@@ -7753,9 +7803,29 @@ export default {
         this.showLehrerPlanModal = true;
       }
     },
+    // Liefert die Raum-IDs eines Termins - unabhaengig davon, ob er sie als
+    // 'raum_ids' fuehrt (Lehrerstundenplan) oder nur als Objektliste 'raeume'
+    // (Diensteinsatzplan). Namen im 'raeume'-Feld des Lehrerplans fallen dabei
+    // heraus, weil sie sich nicht in eine Zahl umwandeln lassen.
+    raumIdsAusTermin(termin) {
+      if (Array.isArray(termin?.raum_ids)) {
+        return termin.raum_ids.map(Number).filter(id => id > 0);
+      }
+      return (termin?.raeume || [])
+          .map(r => Number(r && typeof r === 'object' ? r.id : r))
+          .filter(id => id > 0);
+    },
     editLehrerAssignment(termin) {
       // 1. Tiefe Kopie des Objekts erstellen, um die Originaldaten im Plan nicht sofort zu manipulieren
       this.lehrerPlanForm = {...termin};
+
+      // Raumliste absichern: das Modal greift auf raum_ids.length zu. Fehlt das
+      // Feld (der Diensteinsatzplan lieferte lange nur 'raeume'), bricht das
+      // Rendern mit einem TypeError ab - das Modal wurde dann gar nicht erst
+      // sichtbar und ein Einsatz liess sich nicht bearbeiten.
+      this.lehrerPlanForm.raum_ids = this.raumIdsAusTermin(termin);
+      this.lehrerPlanForm.raeume = this.raeume.filter(r =>
+          this.lehrerPlanForm.raum_ids.includes(r.id));
 
       // Aeussere Differenzierung als echten Boolean fuehren (Alt-Daten liefern
       // teils "0"/"1" als String - "0" waere in JS truthy und die Checkbox waere
@@ -7994,6 +8064,8 @@ export default {
         start: '08:00',
         ende: '09:30',
         tag: '',
+        raum_ids: [],
+        raeume: [],
         is_differenzierung: false,
         draggedItem: null,
         itemType: '',

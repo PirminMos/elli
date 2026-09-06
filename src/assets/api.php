@@ -3937,7 +3937,12 @@ if ($action === 'get_raum_verfuegbarkeit') {
                   'aktivitaet_id'      => $row['aktivitaet_id'] !== null ? (int)$row['aktivitaet_id'] : null,
                   'aktivitaet'         => $row['aktivitaet_name'],
                   'aktivitaet_typ'     => $row['aktivitaet_typ'],
-                  'raeume'             => $raeumeByTermin[$tid] ?? []
+                  'raeume'             => $raeumeByTermin[$tid] ?? [],
+                  // Das Bearbeiten-Modal arbeitet mit reinen IDs (wie im
+                  // Lehrerstundenplan). Ohne dieses Feld stand raum_ids im
+                  // Formular auf undefined, das Rendern des Modals brach ab
+                  // und ein Diensteinsatz liess sich nicht oeffnen.
+                  'raum_ids'           => array_column($raeumeByTermin[$tid] ?? [], 'id')
               ];
           }
 

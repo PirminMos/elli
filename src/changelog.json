@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "6efe1ca",
+      "hash": "fa15222",
+      "date": "2026-09-06",
+      "subject": "Feature: Aktivitaeten im Diensteinsatzplan bearbeiten"
+    },
+    {
+      "hash": "305e9f5",
       "date": "2026-09-06",
       "subject": "Fix: Keine Fehlermeldung beim Oeffnen eines Termins zum Bearbeiten"
     },
