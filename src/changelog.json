@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "f148b82",
+      "hash": "a6502b3",
+      "date": "2026-09-06",
+      "subject": "Fix: Genehmigt-Datum im Diensteinsatzplan war abgeschnitten"
+    },
+    {
+      "hash": "bf131fd",
       "date": "2026-09-06",
       "subject": "Fix: Lehrerstundenplan hatte zwei Unterschriftssektionen"
     },
