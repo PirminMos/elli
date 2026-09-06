@@ -3310,14 +3310,17 @@ if ($action === 'export_schuelerstundenplan') {
             foreach ($teile as [$text, $bold, $size]) $inner .= $run($text, $bold, $size, $font);
             return '<w:p><w:pPr><w:spacing w:after="' . $after . '"/><w:jc w:val="' . $align . '"/></w:pPr>' . $inner . '</w:p>';
         };
+        // Der Ueberschriftskasten ist grau hinterlegt wie die Kopfzeilen der
+        // beiden Tabellen darunter - so liest sich das Blatt als ein Stueck.
+        $KOPFGRAU = 'D9D9D9';
         $kopf = $tbl([$HL, $HR], [
             $trow([
-                $tcell($para('Schüler-Stundenplan   Schuljahr ' . $schule['schuljahr'], true, $KB, 'left', 0, $KF), $HL),
-                $tcell($para('für die Zeit vom ' . $zeitraum, false, $KN, 'left', 0, $KF), $HR),
+                $tcell($para('Schüler-Stundenplan Schuljahr ' . $schule['schuljahr'], true, $KB, 'center', 0, $KF), $HL, 1, $KOPFGRAU),
+                $tcell($para('für die Zeit vom ' . $zeitraum, false, $KN, 'left', 0, $KF), $HR, 1, $KOPFGRAU),
             ], $KH),
             $trow([
-                $tcell($para($schulname, false, $KN, 'center', 0, $KF), $HL),
-                $tcell($paraMixed([['Klasse ', false, $KN], [$klasse['name'], true, $KB]], 'left', 0, $KF), $HR),
+                $tcell($para($schulname, false, $KN, 'center', 0, $KF), $HL, 1, $KOPFGRAU),
+                $tcell($paraMixed([['Klasse ', false, $KN], [$klasse['name'], true, $KB]], 'left', 0, $KF), $HR, 1, $KOPFGRAU),
             ], $KH),
         ], true);
 
@@ -3454,7 +3457,10 @@ if ($action === 'export_schuelerstundenplan') {
         $LCOL = 11350; $RCOL = 3786;
         $outer = $tbl([$LCOL, $RCOL], [
             $trow([
-                $tcell($kopf . $para('', false, 8, 'left', 60) . $timetable . '<w:p/>', $LCOL, 1, null, 'top', true),
+                // Zwischen Ueberschriftskasten und Wochenplan eine Leerzeile
+                // mehr: der schmale 4-pt-Absatz allein sass zu dicht.
+                $tcell($kopf . $para('', false, 8, 'left', 60) . $para('', false, 18, 'left', 0)
+                       . $timetable . '<w:p/>', $LCOL, 1, null, 'top', true),
                 $tcell($stundentafel . $legende . '<w:p/>', $RCOL, 1, null, 'top', true),
             ]),
         ], false);
@@ -3493,7 +3499,9 @@ if ($action === 'export_schuelerstundenplan') {
             ], 300),
         ], false);
 
-        $body = $outer . '<w:p/>' . $fuss;
+        // Abstand zwischen Wochenplan und der "Erstellt am"-Zeile: zwei
+        // Leerabsaetze statt einem.
+        $body = $outer . '<w:p/><w:p/>' . $fuss;
 
         // 7. Body in die Skelett-document.xml des Templates einsetzen (Namespaces/sectPr behalten)
         $tmpl = tempnam(sys_get_temp_dir(), 'ssp');

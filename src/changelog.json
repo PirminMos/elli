@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "5ca0a1e",
+      "hash": "1c29180",
+      "date": "2026-09-06",
+      "subject": "Feature: Schuelerstundenplan - Kopfbereich und Abstaende"
+    },
+    {
+      "hash": "45b6838",
       "date": "2026-09-06",
       "subject": "Fix: \"Unterrichtszeit\" passt wieder in eine Zeile"
     },
@@ -495,11 +500,6 @@
       "hash": "bebaac2",
       "date": "2026-07-14",
       "subject": "Fix: save_zweitkraft robust gegen fehlende Felder (Quick-Add)"
-    },
-    {
-      "hash": "3052e0e",
-      "date": "2026-07-14",
-      "subject": "Fix: Neue Zweitkraft im Aktivitaeten-Editor wird als Zweitkraft gespeichert"
     }
   ]
 }
