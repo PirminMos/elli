@@ -922,7 +922,7 @@
               </div>
 
               <div class="grid-body">
-                <div v-for="stunde in zeitRaster" :key="stunde.id" class="grid-row">
+                <div v-for="stunde in zeitRasterAnzeige" :key="stunde.id" class="grid-row">
 
                   <div class="time-label">
                     <div class="time-display" @click="editingId = stunde.id">
@@ -5838,8 +5838,9 @@ const generateDefaultRaster = () => {
   ];
   const raster = fix.map((z, i) => ({id: i + 1, start: z[0], ende: z[1]}));
   // Ab der 7. Stunde im Dreiviertelstundentakt weiter (ab 13:15).
+  // Bis 9 Stunden: die letzte endet damit um 15:30 - weiter reicht der Plan nicht.
   let start = 13 * 60 + 15;
-  for (let i = fix.length; i < 10; i++) {
+  for (let i = fix.length; i < 9; i++) {
     raster.push({id: i + 1, start: formatTime(start), ende: formatTime(start + 45)});
     start += 45;
   }
@@ -5853,6 +5854,17 @@ function formatTime(mins) {
 }
 
 const zeitRaster = ref(generateDefaultRaster());
+
+// Angezeigt werden nur Stunden, die vor 15:30 beginnen - so weit reicht der
+// Schuelerstundenplan. Bewusst nur ein Anzeigefilter: zeitRaster selbst bleibt
+// vollstaendig, denn es wird beim Speichern zurueckgeschrieben. Wuerde hier
+// gekuerzt, verschwaende die letzte Stunde beim naechsten Speichern dauerhaft
+// aus der Datenbank.
+const PLAN_ENDE = '15:30';
+const zeitRasterAnzeige = computed(
+    () => zeitRaster.value.filter(s => (s.start || '') < PLAN_ENDE)
+);
+
 defineExpose({
   zeitRaster
 });

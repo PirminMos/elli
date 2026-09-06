@@ -3117,6 +3117,22 @@ if ($action === 'export_schuelerstundenplan') {
         $stmtR->execute([$klasse_id]);
         $raster = $stmtR->fetchAll(PDO::FETCH_ASSOC);
 
+        // Der Plan endet spaetestens um 15:30 - dieselbe Grenze wie beim
+        // Raumbelegungsplan. Stunden, die erst danach beginnen, entfallen;
+        // eine Stunde, die darueber hinausreicht, wird gekappt. Zeiten sind
+        // "HH:MM" und damit als Zeichenkette richtig vergleichbar.
+        // $raster bestimmt Zeilen, Leerfall und Hoehenberechnung des Blattes,
+        // deshalb genuegt der Schnitt an dieser einen Stelle.
+        $PLAN_ENDE = '15:30';
+        $raster = array_values(array_filter(array_map(
+            function ($r) use ($PLAN_ENDE, $hhmm) {
+                if ($hhmm($r['startzeit']) >= $PLAN_ENDE) return null;
+                if ($hhmm($r['endzeit']) > $PLAN_ENDE) $r['endzeit'] = $PLAN_ENDE;
+                return $r;
+            },
+            $raster
+        )));
+
         // 3. Termine der Klasse inkl. aller verantwortlichen Lehrkräfte (Namen)
         $stmtT = $conn->prepare("
             SELECT t.tag, t.start,
@@ -3445,9 +3461,9 @@ if ($action === 'export_schuelerstundenplan') {
                 $tcell($para(''), $FR),
             ], 700),
             $trow([
-                $tcell($para('Unterschrift Klassenleiter/in', false, 18), $FL, 1, null, 'top', false, $SIG),
+                $tcell($para('Unterschrift Klassenleitung', false, 18), $FL, 1, null, 'top', false, $SIG),
                 $tcell($para(''), $FG),
-                $tcell($para('Unterschrift Schulleiter', false, 18), $FL, 1, null, 'top', false, $SIG),
+                $tcell($para('Unterschrift Schulleitung', false, 18), $FL, 1, null, 'top', false, $SIG),
                 $tcell($para(''), $FG),
                 $tcell($para('Regierung von Ndb.', false, 18), $FR, 1, null, 'top', false, $SIG),
             ], 300),

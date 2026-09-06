@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "5e7c7e5",
+      "hash": "cbca806",
+      "date": "2026-09-06",
+      "subject": "Feature: Schuelerstundenplan endet um 15:30, Unterschriften neutral"
+    },
+    {
+      "hash": "061bd13",
       "date": "2026-09-06",
       "subject": "Feature: Raumbelegungsplan - Kopf und Zeitspalte lesbarer"
     },
@@ -495,11 +500,6 @@
       "hash": "09c071b",
       "date": "2026-07-14",
       "subject": "Feature: Onboarding-Modal erzwingt Schuljahr-Anlage beim ersten Start"
-    },
-    {
-      "hash": "c4b3989",
-      "date": "2026-07-14",
-      "subject": "Fix: Klassen-Stundenplan zeigt Termine aus fremdem Kontext"
     }
   ]
 }
