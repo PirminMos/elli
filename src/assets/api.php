@@ -3280,13 +3280,20 @@ if ($action === 'export_schuelerstundenplan') {
         //
         //     Masse des Wochenrasters: stehen hier oben, weil der Kopf sich daran
         //     ausrichtet (siehe $KOPFW).
-        // Die Zeitspalte war mit 1740 (3,07 cm) deutlich breiter als ihr
-        // Inhalt ("08.15-09.00" braucht bei 9 pt gut 2 cm). Diese 440 Twips
-        // und die 850, die weiter unten durch schmalere Seitenraender frei
-        // werden, gehen an die Tagesspalten: 1290 / 10 = 129 je Sub-Spalte.
-        // Eine Tagesspalte waechst damit von 3,06 auf 3,51 cm - genug, damit
-        // ein Fach wie "Sport und Bewegen" in eine Zeile passt.
-        $SUB = 995; $ZW = 1300; $DAYW = 2 * $SUB;
+        // Die Zeitspalte war mit 1740 (3,07 cm) breiter als noetig. Sie und
+        // die 850 Twips, die weiter unten durch schmalere Seitenraender frei
+        // werden, kommen den Tagesspalten zugute - dort brachen lange
+        // Fachnamen um.
+        //
+        // Untergrenze der Zeitspalte ist ihre Kopfzeile, nicht der Inhalt:
+        // "Unterrichtszeit" misst in Times New Roman fett bei 9 pt 1159
+        // Twips, dazu 2 x 108 Zellrand = 1375. Mit 1400 bleibt etwas Puffer
+        // fuer Word-eigene Rundung. ("08.15-09.00" braeuchte nur 870+216.)
+        //
+        // Rest an die Tagesspalten: (440 - 100) + 850 = 1190, also 119 je
+        // Sub-Spalte. Eine Tagesspalte waechst von 3,06 auf 3,47 cm - genug,
+        // damit ein Fach wie "Sport und Bewegen" in eine Zeile passt.
+        $SUB = 985; $ZW = 1400; $DAYW = 2 * $SUB;
         // Beide Kopfspalten gleich breit. Gesamtbreite = Breite des Wochenrasters
         // darunter, damit der Kopf auf derselben Kante endet und denselben Abstand
         // zur Stundentafel rechts haelt wie das Raster (LCOL ist etwas breiter).
