@@ -2338,7 +2338,7 @@ if ($action === 'export_lehrerstundenplan') {
         // 1. Schule (inkl. Nachname/Titel/Genehmiger aus den Einstellungen im Burgermenue)
         elli_ensure_schule_columns($conn);
         $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger,
-                                        genehmiger_schulleitung
+                                        genehmiger_schulleitung, mitersteller_lehrerplan
                                  FROM schule WHERE id = ?");
         $stmtS->execute([$schuljahr_id]);
         $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
@@ -2473,6 +2473,17 @@ if ($action === 'export_lehrerstundenplan') {
         $tpl->setValue('grund', $esc($e['ermaessigung_grund']));
         $tpl->setValue('erstellt', date('d.m.y'));
         $tpl->setValue('genehmigt', date('d.m.y', strtotime('+1 day')));
+        // Mitersteller aus dem Burgermenue ("Mitersteller Lehrerstundenplan").
+        // Er steht mit "und" auf der Zeile UNTER dem Ersteller - die Zeile hat
+        // eine feste Hoehe, ein Umbruch wuerde abgeschnitten. Ohne Eintrag
+        // bleibt sie leer und der Ersteller ohne Komma.
+        $mitersteller = trim(preg_replace('/\s+/u', ' ', (string)($schule['mitersteller_lehrerplan'] ?? '')));
+        if ($mitersteller !== '') {
+            if ($ersteller !== '') $ersteller .= ',';
+            $tpl->setValue('mitersteller', $esc('und ' . $mitersteller));
+        } else {
+            $tpl->setValue('mitersteller', '');
+        }
         $tpl->setValue('ersteller', $esc($ersteller));
         $tpl->setValue('genehmiger', $esc($genehmiger));
 

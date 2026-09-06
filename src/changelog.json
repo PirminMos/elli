@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "bfb11ba",
+      "hash": "4247b39",
+      "date": "2026-09-06",
+      "subject": "Feature: Lehrerstundenplan zeigt den Mitersteller"
+    },
+    {
+      "hash": "f00894f",
       "date": "2026-09-06",
       "subject": "Feature: Burgermenue umgebaut - Rubrik Schule, drei Spalten"
     },
