@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "e01ae0a",
+      "hash": "f148b82",
+      "date": "2026-09-06",
+      "subject": "Fix: Lehrerstundenplan hatte zwei Unterschriftssektionen"
+    },
+    {
+      "hash": "19c2859",
       "date": "2026-09-06",
       "subject": "Fix: Exporte nachgezogen - Raster, Unterschriften, Mitersteller"
     },
