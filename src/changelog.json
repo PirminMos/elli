@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "73dc190",
+      "hash": "1fb8797",
+      "date": "2026-09-06",
+      "subject": "Feature: Schuelerstundenplan - mehr Platz fuer Fachnamen"
+    },
+    {
+      "hash": "210425a",
       "date": "2026-09-06",
       "subject": "Feature: Schuelerstundenplan - hoehere Zeilen als Ausgleich"
     },
@@ -495,11 +500,6 @@
       "hash": "997db6b",
       "date": "2026-07-14",
       "subject": "Favicon.ico aus neuem elli-Logo erneuert"
-    },
-    {
-      "hash": "a040e75",
-      "date": "2026-07-14",
-      "subject": "Fix: Neu erstellter Raum im Lehrerplan auswaehlbar"
     }
   ]
 }

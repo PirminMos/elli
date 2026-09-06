@@ -3280,7 +3280,13 @@ if ($action === 'export_schuelerstundenplan') {
         //
         //     Masse des Wochenrasters: stehen hier oben, weil der Kopf sich daran
         //     ausrichtet (siehe $KOPFW).
-        $SUB = 866; $ZW = 1740; $DAYW = 2 * $SUB;
+        // Die Zeitspalte war mit 1740 (3,07 cm) deutlich breiter als ihr
+        // Inhalt ("08.15-09.00" braucht bei 9 pt gut 2 cm). Diese 440 Twips
+        // und die 850, die weiter unten durch schmalere Seitenraender frei
+        // werden, gehen an die Tagesspalten: 1290 / 10 = 129 je Sub-Spalte.
+        // Eine Tagesspalte waechst damit von 3,06 auf 3,51 cm - genug, damit
+        // ein Fach wie "Sport und Bewegen" in eine Zeile passt.
+        $SUB = 995; $ZW = 1300; $DAYW = 2 * $SUB;
         // Beide Kopfspalten gleich breit. Gesamtbreite = Breite des Wochenrasters
         // darunter, damit der Kopf auf derselben Kante endet und denselben Abstand
         // zur Stundentafel rechts haelt wie das Raster (LCOL ist etwas breiter).
@@ -3435,7 +3441,10 @@ if ($action === 'export_schuelerstundenplan') {
         // --- Äußere 2-Spalten-Anordnung: links Raster+Legende, rechts Stundentafel ---
         // Null-Zellränder (nomar=true), damit die inneren Tabellen ihre volle Breite
         // inkl. rechtem Rahmen behalten.
-        $LCOL = 10500; $RCOL = 3786;
+        // LCOL folgt der Breite des Wochenrasters ($KOPFW plus etwas Luft).
+        // RCOL bleibt unveraendert - die Stundentafel wird nicht schmaler,
+        // ihre Fachspalte enthaelt dieselben langen Namen.
+        $LCOL = 11350; $RCOL = 3786;
         $outer = $tbl([$LCOL, $RCOL], [
             $trow([
                 $tcell($kopf . $para('', false, 8, 'left', 60) . $timetable . '<w:p/>', $LCOL, 1, null, 'top', true),
@@ -3489,6 +3498,23 @@ if ($action === 'export_schuelerstundenplan') {
         if (preg_match('/<w:document[^>]*>/', $docXml, $mm)) $docOpen = $mm[0];
         $sectPr = '';
         if (preg_match('/<w:sectPr.*?<\/w:sectPr>/s', $docXml, $ms)) $sectPr = $ms[0];
+
+        // Seitenraender links und rechts von 1418 bzw. 1134 auf je 851 Twips
+        // (1,5 cm) verschmaelern. Die Vorlage bringt zusammen 4,5 cm Rand mit,
+        // was auf A4 quer Platz kostet, den die Tagesspalten besser gebrauchen
+        // koennen. Oben und unten bleiben unangetastet. Bewusst hier im Code
+        // statt in der .docx: so ist der Wert versioniert und betrifft nur
+        // diesen Plan.
+        if ($sectPr !== '') {
+            $sectPr = preg_replace_callback(
+                '/<w:pgMar\b[^>]*\/>/',
+                function ($m) {
+                    $tag = preg_replace('/\sw:left="\d+"/',  ' w:left="851"',  $m[0]);
+                    return preg_replace('/\sw:right="\d+"/', ' w:right="851"', $tag);
+                },
+                $sectPr
+            );
+        }
         $newDoc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\r\n"
                 . $docOpen . '<w:body>' . $body . $sectPr . '</w:body></w:document>';
         $zip->deleteName('word/document.xml');
