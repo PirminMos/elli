@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "fa15222",
+      "hash": "f2968ca",
+      "date": "2026-09-06",
+      "subject": "Fix: Schuelerstundenplan meldet ungespeicherte Aenderungen"
+    },
+    {
+      "hash": "037d7bf",
       "date": "2026-09-06",
       "subject": "Feature: Aktivitaeten im Diensteinsatzplan bearbeiten"
     },

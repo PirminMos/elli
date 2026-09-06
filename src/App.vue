@@ -858,7 +858,11 @@
                 class="glass-btn btn-save-small"
                 @click="saveSchuelerStundenplan"
                 :disabled="!currentSchuelerStundenPlan.klasse_name"
-                :class="{ 'btn-disabled': !currentSchuelerStundenPlan.klasse_name }"
+                :class="{
+                  'btn-disabled': !currentSchuelerStundenPlan.klasse_name,
+                  'hat-aenderungen': planUngespeichert
+                }"
+                :title="planUngespeichert ? 'Ungespeicherte Änderungen – jetzt speichern' : 'Plan speichern'"
             >
               <span class="save-icon">💾</span>
             </button>
@@ -6163,6 +6167,9 @@ export default {
       if (this.activeCategory === 'lehrerstundenplan') {
         return this.planFingerprint(this.currentLehrerstundenplan, true) !== this.planSnapshot;
       }
+      if (this.activeCategory === 'schuelerstundenplan') {
+        return this.planFingerprint(this.currentSchuelerStundenPlan, false, true) !== this.planSnapshot;
+      }
       return false;
     },
     aktivitaetenMitFarbe() {
@@ -6329,6 +6336,8 @@ export default {
           schuljahr_id: this.currentSchuljahrId,
           termine: []
         };
+        // Leerer Plan = noch nichts zu speichern
+        this.merkePlanStand();
         this.view = 'editor';
       }
     },
@@ -8382,6 +8391,9 @@ export default {
           // Neue ID für nachfolgende Updates setzen
           this.currentSchuelerStundenPlan.id = result.klasseId;
           this.showStatus("Schülerstundenplan erfolgreich gespeichert!", "success");
+          // Der Plan wird nicht neu geladen - also hier den aktuellen Stand als
+          // gespeichert vermerken, sonst bliebe die Aenderungsmarkierung stehen.
+          this.merkePlanStand();
           await this.loadSchuelerStundenPlaene();
 
           // Optional: Liste der Pläne im Hintergrund aktualisieren
@@ -9887,6 +9899,11 @@ export default {
             if (typeof this.updateGridDisplay === 'function') this.updateGridDisplay();
             if (typeof this.updateIstStunden === 'function') this.updateIstStunden();
           });
+
+          // Erst jetzt den Stand als "gespeichert" merken: updateGridDisplay
+          // kann die Termine noch anfassen, ein frueherer Schnappschuss haette
+          // den Plan sofort als geaendert gemeldet.
+          this.merkePlanStand();
         }
       } catch (e) {
         console.error("Fehler beim Laden des Stundenplans:", e);
@@ -9950,12 +9967,21 @@ export default {
     // Bewusst feldweise statt JSON.stringify: die Termine tragen je nach
     // Herkunft (Server oder frisch abgelegt) unterschiedliche Zusatzfelder,
     // ein roher Vergleich wuerde dauernd falschen Alarm ausloesen.
-    planFingerprint(plan, mitTafel = false) {
+    // mitKraeften gilt nur fuer den Schuelerstundenplan: dort haengt die
+    // Lehrkraft am einzelnen Termin und ist Teil des Plans. Im Lehrer- und
+    // Diensteinsatzplan steht die Kraft dagegen fest ueber dem ganzen Plan -
+    // frisch abgelegte Termine tragen dort eine erstkraft_id/zweitkraft_id,
+    // die der Server so nie zurueckliefert. Mitgezaehlt haette der Plan sich
+    // dauerhaft als geaendert gemeldet.
+    // Ebenfalls nur dort: stunden_id. Beim Verschieben im Schuelerplan wandert
+    // nur tag + stunden_id mit, start/ende bleiben stehen - ueber die Zeiten
+    // allein waere ein Verschieben unsichtbar geblieben.
+    planFingerprint(plan, mitTafel = false, mitKraeften = false) {
       const p = plan || {};
       const zeilen = (p.termine || []).map(t => {
         const raeume = (t.raum_ids || (t.raeume || []).map(r => (r && r.id !== undefined) ? r.id : r) || [])
             .map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
-        return [
+        const felder = [
           t.tag || '',
           String(t.start || '').slice(0, 5),
           String(t.ende || '').slice(0, 5),
@@ -9964,7 +9990,11 @@ export default {
           t.klassen_id ?? '',
           raeume.join('.'),
           t.is_differenzierung ? 1 : 0
-        ].join('|');
+        ];
+        if (mitKraeften) {
+          felder.push(t.stunden_id ?? '', t.erstkraft_id ?? '', t.zweitkraft_id ?? '');
+        }
+        return felder.join('|');
       }).sort();
 
       if (mitTafel) {
@@ -9982,6 +10012,8 @@ export default {
         this.planSnapshot = this.planFingerprint(this.currentDiensteinsatzplan);
       } else if (this.activeCategory === 'lehrerstundenplan') {
         this.planSnapshot = this.planFingerprint(this.currentLehrerstundenplan, true);
+      } else if (this.activeCategory === 'schuelerstundenplan') {
+        this.planSnapshot = this.planFingerprint(this.currentSchuelerStundenPlan, false, true);
       }
     },
     // Tastatur-Sprungmarke fuer die eigenen Dropdowns (.custom-options).
