@@ -368,6 +368,204 @@ function elli_berufe_anzeige(array $z): string {
     return implode(', ', $teile) . ' und ' . $letzter;
 }
 
+/**
+ * Einmalige Bereinigung: alte Erstkraft-Aktivitaeten in Schulstunden zerlegen.
+ *
+ * Frueher liessen sich Aktivitaeten im Lehrerstundenplan mit freier Dauer
+ * anlegen (60, 90, 120 Minuten). Seit dem UE-Slider zerfaellt jeder neue
+ * Eintrag in einzelne Rasterstunden - die Altdaten sind aber noch am Stueck
+ * und tragen zudem keine stunden_id, landen im Schuelerstundenplan also in
+ * der Stunde mit der kleinsten ID.
+ *
+ * Die Regel: der Zeitraum wird auf die Rasterstunden der Klasse abgebildet,
+ * die er ueberlappt - nicht stur durch 45 geteilt. Das ist dieselbe Rechnung
+ * wie updateStundenFromEnde im Frontend und behandelt Pausen automatisch
+ * richtig: 08:15-10:15 wird zu drei Schulstunden, obwohl dazwischen eine
+ * Pause liegt.
+ *
+ * Aufruf:
+ *   GET  ?action=migriere_aktivitaetsraster&schuljahr_id=4     -> Vorschau
+ *   POST ?action=migriere_aktivitaetsraster&schuljahr_id=4&modus=anwenden
+ *
+ * Die Vorschau schreibt nichts. Angewendet wird nur per POST, damit ein
+ * versehentlich geoeffneter Link keine Daten veraendert.
+ *
+ * Idempotent: ein Termin, der bereits genau einer Rasterstunde entspricht
+ * und seine stunden_id hat, wird nicht angefasst. Zweitkraft-Aktivitaeten
+ * bleiben aussen vor - deren Diensteinsaetze sind bewusst durchgehende Bloecke.
+ */
+if ($action === 'migriere_aktivitaetsraster') {
+    $schuljahr_id = isset($_GET['schuljahr_id']) ? (int)$_GET['schuljahr_id'] : 0;
+    $anwenden = ($_GET['modus'] ?? '') === 'anwenden' && $_SERVER['REQUEST_METHOD'] === 'POST';
+
+    if (!$schuljahr_id) {
+        echo json_encode(["success" => false, "error" => "schuljahr_id fehlt"]);
+        exit;
+    }
+
+    try {
+        // 1. Kandidaten: Termine von Erstkraft-Aktivitaeten dieses Schuljahres
+        $stmt = $conn->prepare("SELECT t.id, t.klassen_id, t.aktivitaet_id, t.tag, t.stunden_id,
+                                       t.start, t.ende, t.is_differenzierung,
+                                       a.name AS aktivitaet, k.name AS klasse
+                                FROM termin t
+                                JOIN aktivitaet a ON a.id = t.aktivitaet_id
+                                LEFT JOIN klassen k ON k.id = t.klassen_id
+                                WHERE a.kraft_typ = 'erst' AND a.schuljahr_id = ?
+                                ORDER BY t.tag, t.start");
+        $stmt->execute([$schuljahr_id]);
+        $kandidaten = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // 2. Zeitraster je Klasse einmal laden
+        $rasterCache = [];
+        $holeRaster = function ($klasseId) use ($conn, &$rasterCache) {
+            if (!isset($rasterCache[$klasseId])) {
+                $st = $conn->prepare("SELECT stunden_index, startzeit, endzeit
+                                      FROM klassen_zeitraster WHERE klasse_id = ?
+                                      ORDER BY startzeit");
+                $st->execute([$klasseId]);
+                $rasterCache[$klasseId] = $st->fetchAll(PDO::FETCH_ASSOC);
+            }
+            return $rasterCache[$klasseId];
+        };
+
+        $plan = [];          // was geaendert wuerde
+        $unveraendert = 0;   // passt schon
+        $uebersprungen = []; // braucht eine Entscheidung von Hand
+
+        foreach ($kandidaten as $t) {
+            $bez = $t['aktivitaet'] . ' (' . $t['tag'] . ' ' . substr($t['start'],0,5) .
+                   '–' . substr($t['ende'],0,5) . ')';
+
+            if (empty($t['klassen_id'])) {
+                $uebersprungen[] = ['termin_id' => (int)$t['id'], 'was' => $bez,
+                                    'grund' => 'Keine Klasse hinterlegt - ohne Zeitraster gibt es keine richtige Aufteilung.'];
+                continue;
+            }
+
+            $raster = $holeRaster((int)$t['klassen_id']);
+            if (!$raster) {
+                $uebersprungen[] = ['termin_id' => (int)$t['id'], 'was' => $bez,
+                                    'grund' => 'Klasse ' . $t['klasse'] . ' hat kein Zeitraster gepflegt.'];
+                continue;
+            }
+
+            // Ueberlappte Rasterstunden bestimmen (Start < Ende_Raster UND Ende > Start_Raster)
+            $treffer = [];
+            foreach ($raster as $zr) {
+                if ($t['start'] < $zr['endzeit'] && $t['ende'] > $zr['startzeit']) {
+                    $treffer[] = $zr;
+                }
+            }
+
+            if (!$treffer) {
+                $uebersprungen[] = ['termin_id' => (int)$t['id'], 'was' => $bez,
+                                    'grund' => 'Zeitraum liegt in keiner Rasterstunde der Klasse ' . $t['klasse'] . ' (z.B. in einer Pause).'];
+                continue;
+            }
+
+            // Passt schon? Genau eine Stunde, Zeiten identisch, stunden_id gesetzt.
+            if (count($treffer) === 1
+                && $t['start'] === $treffer[0]['startzeit']
+                && $t['ende'] === $treffer[0]['endzeit']
+                && $t['stunden_id'] !== null
+                && (int)$t['stunden_id'] === (int)$treffer[0]['stunden_index']) {
+                $unveraendert++;
+                continue;
+            }
+
+            $plan[] = [
+                'termin_id'  => (int)$t['id'],
+                'was'        => $bez,
+                'klasse'     => $t['klasse'],
+                'vorher'     => substr($t['start'],0,5) . '–' . substr($t['ende'],0,5) .
+                                ' (' . (int)((strtotime($t['ende']) - strtotime($t['start'])) / 60) . ' Min, stunden_id ' .
+                                ($t['stunden_id'] === null ? 'NULL' : $t['stunden_id']) . ')',
+                'nachher'    => array_map(fn($zr) => substr($zr['startzeit'],0,5) . '–' . substr($zr['endzeit'],0,5) .
+                                                     ' (Stunde ' . $zr['stunden_index'] . ')', $treffer),
+                'stunden'    => count($treffer),
+                '_treffer'   => $treffer,
+                '_rohdaten'  => $t,
+            ];
+        }
+
+        // 3. Anwenden (nur per POST)
+        $geschrieben = 0;
+        if ($anwenden && $plan) {
+            $conn->beginTransaction();
+
+            $stmtUpd = $conn->prepare("UPDATE termin SET stunden_id = ?, start = ?, ende = ? WHERE id = ?");
+            $stmtIns = $conn->prepare("INSERT INTO termin
+                (klassen_id, aktivitaet_id, schulfach_id, tag, stunden_id, start, ende, is_differenzierung)
+                VALUES (?, ?, NULL, ?, ?, ?, ?, ?)");
+            $stmtRaeume = $conn->prepare("SELECT raum_id FROM termin_raeume WHERE termin_id = ?");
+            $stmtInsRaum = $conn->prepare("INSERT INTO termin_raeume (termin_id, raum_id) VALUES (?, ?)");
+            $stmtKraefte = $conn->prepare("SELECT kraft_id, kraft_typ FROM termin_verantwortliche WHERE termin_id = ?");
+            $stmtInsKraft = $conn->prepare("INSERT INTO termin_verantwortliche (termin_id, kraft_id, kraft_typ) VALUES (?, ?, ?)");
+
+            foreach ($plan as $eintrag) {
+                $t = $eintrag['_rohdaten'];
+                $treffer = $eintrag['_treffer'];
+
+                // Raeume und Verantwortliche des Originals merken - die neuen
+                // Stunden sollen dieselben tragen.
+                $stmtRaeume->execute([$t['id']]);
+                $raeume = $stmtRaeume->fetchAll(PDO::FETCH_COLUMN);
+                $stmtKraefte->execute([$t['id']]);
+                $kraefte = $stmtKraefte->fetchAll(PDO::FETCH_ASSOC);
+
+                // Erste Stunde: den bestehenden Termin umschreiben. So bleiben
+                // seine Verknuepfungen erhalten und die ID stabil.
+                $erste = array_shift($treffer);
+                $stmtUpd->execute([(int)$erste['stunden_index'], $erste['startzeit'], $erste['endzeit'], $t['id']]);
+                $geschrieben++;
+
+                // Weitere Stunden: neue Termine mit denselben Verknuepfungen
+                foreach ($treffer as $zr) {
+                    $stmtIns->execute([
+                        $t['klassen_id'], $t['aktivitaet_id'], $t['tag'],
+                        (int)$zr['stunden_index'], $zr['startzeit'], $zr['endzeit'],
+                        (int)$t['is_differenzierung'],
+                    ]);
+                    $neuId = $conn->lastInsertId();
+                    foreach ($raeume as $rid)  $stmtInsRaum->execute([$neuId, $rid]);
+                    foreach ($kraefte as $kr)  $stmtInsKraft->execute([$neuId, $kr['kraft_id'], $kr['kraft_typ']]);
+                    $geschrieben++;
+                }
+            }
+
+            $conn->commit();
+        }
+
+        // Interne Felder aus der Antwort nehmen
+        $planAusgabe = array_map(function ($e) {
+            unset($e['_treffer'], $e['_rohdaten']);
+            return $e;
+        }, $plan);
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            "success"        => true,
+            "modus"          => $anwenden ? 'angewendet' : 'vorschau',
+            "geprueft"       => count($kandidaten),
+            "unveraendert"   => $unveraendert,
+            "zu_aendern"     => count($plan),
+            "neue_zeilen"    => $anwenden ? $geschrieben : array_sum(array_column($plan, 'stunden')),
+            "plan"           => $planAusgabe,
+            "uebersprungen"  => $uebersprungen,
+            "hinweis"        => $anwenden
+                ? 'Angewendet. Uebersprungene Termine brauchen eine Entscheidung von Hand.'
+                : 'Nur Vorschau - es wurde nichts geschrieben. Zum Anwenden: dieselbe URL mit &modus=anwenden als POST.',
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        http_response_code(500);
+        echo json_encode(["success" => false, "error" => $e->getMessage()]);
+    }
+    exit;
+}
+
 if ($action === 'get_schuljahre') {
     try {
         elli_ensure_schule_columns($conn);

@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "b78ace5",
+      "hash": "e12ffcd",
+      "date": "2026-09-06",
+      "subject": "Feature: Migration zerlegt alte Aktivitaeten in Schulstunden"
+    },
+    {
+      "hash": "eabe2e0",
       "date": "2026-09-06",
       "subject": "Fix: Aktivitaeten bekommen ihre Rasterstunde - auch Stunde 0"
     },
