@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "370b71f",
+      "hash": "72a451d",
+      "date": "2026-09-06",
+      "subject": "Fix: Tagesarbeitszeit rutscht bei Montag und Donnerstag in den Folgetag"
+    },
+    {
+      "hash": "0c270fd",
       "date": "2026-09-06",
       "subject": "Fix: Zurueck-Taste beendet die laufende Meldung"
     },
