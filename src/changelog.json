@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "72a451d",
+      "hash": "c50e38b",
+      "date": "2026-09-06",
+      "subject": "Feature: Diensteinsatzplan bekommt zwei Unterschriftszeilen"
+    },
+    {
+      "hash": "7f42343",
       "date": "2026-09-06",
       "subject": "Fix: Tagesarbeitszeit rutscht bei Montag und Donnerstag in den Folgetag"
     },
