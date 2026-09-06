@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "a6502b3",
+      "hash": "46cc002",
+      "date": "2026-09-06",
+      "subject": "Fix: Lehrerstundenplan passt wieder auf eine Seite"
+    },
+    {
+      "hash": "1983167",
       "date": "2026-09-06",
       "subject": "Fix: Genehmigt-Datum im Diensteinsatzplan war abgeschnitten"
     },
