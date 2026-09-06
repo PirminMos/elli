@@ -886,6 +886,187 @@ if ($action === 'import_backup') {
     exit;
 }
 
+// --- Sicherung auf Knopfdruck erstellen -------------------------------
+// Der Backup-Container schreibt automatisch alle 24 Stunden. Vor einem
+// Umzug will man aber den *aktuellen* Stand mitnehmen, nicht den von
+// heute Nacht. Dieser Endpunkt erzeugt deshalb sofort eine zusaetzliche
+// Sicherung - im selben Verzeichnis, im selben Namensschema und mit
+// derselben Rotation, damit beide Wege sich nicht ins Gehege kommen.
+//
+// Warum der Dump hier in PHP entsteht und nicht per mariadb-dump:
+// Im web-Container ist kein MariaDB-Client installiert (siehe Kommentar
+// beim Import). Das Format ist bewusst dasselbe, das mariadb-dump
+// erzeugt - damit ist jede so entstandene Datei sowohl fuer den Import
+// dieser Anwendung als auch fuer "mariadb < datei.sql" verwendbar.
+
+/**
+ * Erzeugt einen vollstaendigen SQL-Dump der Datenbank.
+ *
+ * @param string $dbname Name der Datenbank (nur fuer den Kopfkommentar)
+ * @return string kompletter Dump
+ */
+function elli_erzeuge_dump(PDO $conn, $dbname) {
+    $conn->exec("SET NAMES utf8mb4");
+
+    $z = date('Y-m-d H:i:s');
+    $sql  = "-- elli-Sicherung\n";
+    $sql .= "-- Datenbank: {$dbname}\n";
+    $sql .= "-- Erstellt am: {$z} (manuell aus der Oberflaeche)\n";
+    $sql .= "--\n";
+    $sql .= "-- Wiederherstellen entweder ueber das Willkommens-Fenster der\n";
+    $sql .= "-- Anwendung (\"Backup einspielen\") oder auf der Kommandozeile:\n";
+    $sql .= "--   docker exec -i <db-container> mariadb -u<user> -p<pw> <db> < diese_datei.sql\n";
+    $sql .= "\n";
+    $sql .= "/*!40101 SET NAMES utf8mb4 */;\n";
+    $sql .= "/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;\n";
+    $sql .= "/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;\n\n";
+
+    $tabellen = $conn->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+
+    foreach ($tabellen as $t) {
+        // --- Struktur ---
+        $create = $conn->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_NUM);
+        $sql .= "--\n-- Table structure for table `$t`\n--\n\n";
+        $sql .= "DROP TABLE IF EXISTS `$t`;\n";
+        $sql .= $create[1] . ";\n\n";
+
+        // --- Daten ---
+        $sql .= "--\n-- Dumping data for table `$t`\n--\n\n";
+
+        $stmt   = $conn->query("SELECT * FROM `$t`");
+        $puffer = [];
+        $laenge = 0;
+
+        while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+            $werte = [];
+            foreach ($row as $v) {
+                if ($v === null) {
+                    $werte[] = 'NULL';
+                } elseif (is_int($v) || is_float($v)) {
+                    $werte[] = (string) $v;
+                } else {
+                    // quote() maskiert passend zum Verbindungszeichensatz
+                    $werte[] = $conn->quote($v);
+                }
+            }
+            $tupel   = '(' . implode(',', $werte) . ')';
+            $puffer[] = $tupel;
+            $laenge  += strlen($tupel);
+
+            // In Haeppchen schreiben: ein einziges INSERT ueber zehntausende
+            // Zeilen sprengt sonst max_allowed_packet beim Zurueckspielen.
+            if ($laenge > 500000) {
+                $sql .= "INSERT INTO `$t` VALUES " . implode(",\n", $puffer) . ";\n";
+                $puffer = [];
+                $laenge = 0;
+            }
+        }
+        if ($puffer) {
+            $sql .= "INSERT INTO `$t` VALUES " . implode(",\n", $puffer) . ";\n";
+        }
+        $sql .= "\n";
+    }
+
+    $sql .= "/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;\n";
+    $sql .= "/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;\n\n";
+    $sql .= "-- Dump completed on {$z}\n";
+
+    return $sql;
+}
+
+/**
+ * Loescht die aeltesten Sicherungen, bis nur noch $behalten uebrig sind.
+ * Gleiche Regel wie in docker/backup/backup-loop.sh, damit die
+ * automatischen und die manuellen Sicherungen einen gemeinsamen Vorrat
+ * bilden statt zwei getrennte anwachsen zu lassen.
+ *
+ * @return string[] Namen der geloeschten Dateien
+ */
+function elli_rotiere_backups($verzeichnis, $behalten) {
+    $dateien = glob($verzeichnis . '/elli-*.sql') ?: [];
+    if (count($dateien) <= $behalten) return [];
+
+    usort($dateien, function ($a, $b) { return filemtime($b) <=> filemtime($a); });
+
+    $geloescht = [];
+    foreach (array_slice($dateien, $behalten) as $alt) {
+        if (@unlink($alt)) $geloescht[] = basename($alt);
+    }
+    return $geloescht;
+}
+
+/** Windows-Pfade mit Backslashes anzeigen, wie der Nutzer sie kennt. */
+function elli_pfad_anzeige($pfad) {
+    return preg_match('~^[A-Za-z]:~', $pfad) ? str_replace('/', '\\', $pfad) : $pfad;
+}
+
+if ($action === 'create_backup') {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['success' => false, 'error' => 'Nur POST erlaubt.']);
+        exit;
+    }
+
+    try {
+        if (!is_dir(ELLI_BACKUP_DIR)) {
+            throw new RuntimeException(
+                'Das Sicherungsverzeichnis ist nicht eingebunden. In der docker-compose.yml '
+                . 'muss beim Dienst "web" der Eintrag "./backups:/backups" stehen.'
+            );
+        }
+        if (!is_writable(ELLI_BACKUP_DIR)) {
+            throw new RuntimeException(
+                'Das Sicherungsverzeichnis ist schreibgeschuetzt eingebunden. Der Eintrag in '
+                . 'der docker-compose.yml darf beim Dienst "web" nicht auf ":ro" enden.'
+            );
+        }
+
+        $behalten = (int) (getenv('BACKUP_KEEP') ?: 5);
+        if ($behalten < 1) $behalten = 1;
+
+        // Gleiches Namensschema wie backup-loop.sh -> gemeinsame Rotation
+        $name = 'elli-' . date('Ymd-His') . '.sql';
+        $ziel = ELLI_BACKUP_DIR . '/' . $name;
+
+        $dump = elli_erzeuge_dump($conn, $db_name);
+
+        // Erst in eine .tmp-Datei, dann umbenennen: so wird nie eine halb
+        // geschriebene Datei sichtbar - dieselbe Vorsichtsmassnahme wie im
+        // Backup-Container.
+        if (@file_put_contents($ziel . '.tmp', $dump) === false) {
+            throw new RuntimeException('Die Sicherung konnte nicht geschrieben werden.');
+        }
+        if (!@rename($ziel . '.tmp', $ziel)) {
+            @unlink($ziel . '.tmp');
+            throw new RuntimeException('Die Sicherung konnte nicht abgelegt werden.');
+        }
+
+        $geloescht = elli_rotiere_backups(ELLI_BACKUP_DIR, $behalten);
+
+        // Pfad so angeben, wie der Nutzer ihn im Dateimanager findet -
+        // /backups ist nur die Sicht innerhalb des Containers.
+        $hostVerzeichnis = getenv('BACKUP_HOST_DIR') ?: '';
+        $anzeigePfad = $hostVerzeichnis !== ''
+            ? elli_pfad_anzeige(rtrim($hostVerzeichnis, '/\\') . '/' . $name)
+            : $name;
+
+        echo json_encode([
+            'success'     => true,
+            'datei'       => $name,
+            'pfad'        => $anzeigePfad,
+            'verzeichnis' => $hostVerzeichnis !== '' ? elli_pfad_anzeige(rtrim($hostVerzeichnis, '/\\')) : '',
+            'groesse'     => strlen($dump),
+            'behalten'    => $behalten,
+            'geloescht'   => $geloescht,
+            'anzahl'      => count(glob(ELLI_BACKUP_DIR . '/elli-*.sql') ?: []),
+        ]);
+    } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 if ($action === 'get_schuljahre') {
     try {
         elli_ensure_schule_columns($conn);

@@ -165,6 +165,10 @@
                   :title="updateTitel" @click="oeffneUpdateFenster">Aktualisieren
             <span class="update-symbol"
                   :class="{ 'update-dreht': updater.pruefeLaeuft || updater.state === 'laeuft' }">⟳</span></button>
+          <!-- Sicherung des aktuellen Standes anlegen (fuer den Geraetewechsel) -->
+          <button type="button" class="update-hint-btn" :disabled="backupErstellen.laeuft"
+                  title="Sicherung des aktuellen Standes anlegen"
+                  @click="erstelleBackup">{{ backupErstellen.laeuft ? 'Sicherung läuft …' : 'Backup erstellen' }}</button>
         </p>
       </div>
 
@@ -1820,6 +1824,46 @@
         </div>
       </transition>
 
+
+      <!-- Rueckmeldung nach "Backup erstellen": wo die Datei liegt und
+           wie man sie auf einem anderen Geraet wieder einspielt. -->
+      <div v-if="backupErstellen.zeigeModal" class="modal-overlay"
+           @click.self="backupErstellen.zeigeModal = false">
+        <div class="modal-content glass-modal">
+          <div class="modal-header">
+            <h3><span class="icon">💾</span> Sicherung erstellt</h3>
+          </div>
+          <div class="modal-body">
+            <p class="backup-label">Die Datei liegt hier:</p>
+            <code class="backup-pfad">{{ backupErstellen.ergebnis.pfad }}</code>
+            <p class="backup-meta">
+              {{ formatDateigroesse(backupErstellen.ergebnis.groesse) }} ·
+              {{ backupErstellen.ergebnis.anzahl }} von {{ backupErstellen.ergebnis.behalten }} Sicherungen im Ordner
+              <span v-if="backupErstellen.ergebnis.geloescht && backupErstellen.ergebnis.geloescht.length">
+                · älteste entfernt: {{ backupErstellen.ergebnis.geloescht.join(', ') }}
+              </span>
+            </p>
+
+            <h4 class="backup-umzug-titel">Umzug auf ein anderes Gerät</h4>
+            <ol class="backup-umzug">
+              <li>Diese Datei auf das andere Gerät kopieren – USB-Stick, Netzlaufwerk, E-Mail.</li>
+              <li>Dort das Projekt starten: <code>docker compose up -d</code></li>
+              <li>Beim ersten Aufruf erscheint das Willkommens-Fenster.
+                Dort auf <strong>Backup einspielen</strong> klicken.</li>
+              <li>Die kopierte Datei unter <strong>Oder eine Datei auswählen</strong> hochladen
+                und einspielen. Danach ist der komplette Bestand da.</li>
+            </ol>
+            <p class="backup-warnung">
+              Der Projektordner allein reicht für den Umzug nicht: Die laufende Datenbank liegt
+              in einem Docker-Volume außerhalb des Ordners. Nur diese Sicherungsdatei nimmt die
+              Daten mit.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button class="glass-btn-save" @click="backupErstellen.zeigeModal = false">Alles klar</button>
+          </div>
+        </div>
+      </div>
 
       <div v-if="showOnboardingModal" class="modal-overlay" style="z-index: 9999">
         <div class="modal-content glass-modal">
@@ -3933,6 +3977,46 @@ input:checked + .slider:before {
   font-style: italic;
 }
 
+/* --- Rueckmeldung nach "Backup erstellen" --- */
+.backup-pfad {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+  user-select: all;
+}
+
+.backup-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.backup-umzug-titel {
+  margin: 22px 0 8px;
+  font-size: 14px;
+}
+
+.backup-umzug {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.backup-umzug code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.3);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
 /* --- Backup-Import im Willkommens-Modal --- */
 .backup-label {
   display: block;
@@ -5954,6 +6038,12 @@ export default {
       onboardingSaving: false,
       // Erststart: 'neu' = Schuljahr anlegen, 'import' = Backup einspielen
       onboardingView: 'neu',
+      // Sicherung auf Knopfdruck (Startbildschirm, neben "Aktualisieren")
+      backupErstellen: {
+        laeuft: false,
+        zeigeModal: false,
+        ergebnis: {},
+      },
       backupImport: {
         liste: [],          // Sicherungen aus ./backups (via backup_list)
         ladeListe: false,
@@ -6875,6 +6965,30 @@ export default {
       this.dialog._resolve = null;
       if (r) r(result);
     },
+    // Legt sofort eine Sicherung des aktuellen Standes an. Der
+    // Backup-Container macht das ohnehin taeglich - vor einem Umzug will
+    // man aber den Stand von jetzt, nicht den von heute Nacht.
+    async erstelleBackup() {
+      if (this.backupErstellen.laeuft) return;
+      this.backupErstellen.laeuft = true;
+      try {
+        const response = await fetch(`${API_URL}?action=create_backup`, {method: 'POST'});
+        const result = await response.json().catch(() => ({
+          success: false, error: 'Unerwartete Antwort vom Server.'
+        }));
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Die Sicherung ist fehlgeschlagen.');
+        }
+        this.backupErstellen.ergebnis = result;
+        this.backupErstellen.zeigeModal = true;
+      } catch (e) {
+        console.error('Fehler beim Erstellen der Sicherung:', e);
+        this.showStatus('Sicherung fehlgeschlagen: ' + e.message, 'error', 6000);
+      } finally {
+        this.backupErstellen.laeuft = false;
+      }
+    },
+
     // --- Backup-Import beim Erststart -------------------------------
     // Wechselt im Willkommens-Modal auf die Import-Ansicht und laedt die
     // Sicherungen, die der Backup-Container auf diesem Rechner abgelegt hat.

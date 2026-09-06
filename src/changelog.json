@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "a462751",
+      "hash": "f0c9e4f",
+      "date": "2026-09-06",
+      "subject": "Feature: Sicherung auf Knopfdruck vom Startbildschirm"
+    },
+    {
+      "hash": "c9c8bfd",
       "date": "2026-09-06",
       "subject": "Feature: Backup beim Erststart einspielen (Migration)"
     },

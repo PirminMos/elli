@@ -38,12 +38,18 @@ services:
       DB_NAME: "${DB_NAME:-elli}"
       DB_USER: "${DB_USER:-elli_user}"
       DB_PASSWORD: "${DB_PASSWORD:-1234}"
+      # Fuer "Backup erstellen" in der Oberflaeche: gleiche Rotationsgrenze
+      # wie im backup-Container, damit beide einen gemeinsamen Vorrat bilden.
+      BACKUP_KEEP: "${BACKUP_KEEP:-5}"
+      # Damit die Oberflaeche den Pfad nennen kann, unter dem der Nutzer die
+      # Datei tatsaechlich findet - "/backups" ist nur die Sicht im Container.
+      BACKUP_HOST_DIR: "${PWD}/backups"
     volumes:
-      # Nur lesend: Beim Erststart kann das Willkommens-Modal die bereits
-      # vorhandenen Sicherungen auflisten und eine davon einspielen. Der
-      # web-Container darf sie dabei nicht veraendern oder loeschen - das
-      # bleibt allein Sache des backup-Containers.
-      - ./backups:/backups:ro
+      # Schreibend eingebunden: Die Oberflaeche listet vorhandene Sicherungen
+      # (Erststart-Import) und legt auf Knopfdruck selbst eine an. Geschrieben
+      # und geloescht wird ausschliesslich nach dem Muster "elli-*.sql", damit
+      # der web-Container nichts anderes im Verzeichnis anfassen kann.
+      - ./backups:/backups
     depends_on:
       db:
         condition: service_healthy
