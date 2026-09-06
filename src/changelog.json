@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "b289b8f",
+      "hash": "b78ace5",
+      "date": "2026-09-06",
+      "subject": "Fix: Aktivitaeten bekommen ihre Rasterstunde - auch Stunde 0"
+    },
+    {
+      "hash": "b732838",
       "date": "2026-09-06",
       "subject": "Feature: Verfuegbarkeitspruefungen warnen, statt zu blockieren"
     },

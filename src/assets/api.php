@@ -3340,21 +3340,32 @@ if ($action === 'get_raum_verfuegbarkeit') {
             foreach ($data['termine'] as $idx => $t) {
                 if (empty($t['tag']) || empty($t['start']) || empty($t['ende'])) continue;
 
-                // Schulfach-Termine einer Klasse an DEREN individuelles Zeitraster
-                // binden: passende Rasterstunde suchen, stunden_id daraus ableiten
-                // und Start/Ende exakt auf die Rasterstunde angleichen. So landet der
-                // Termin im Schuelerstundenplan in der richtigen Schulstunde – statt
-                // (mangels stunden_id) in der Stunde mit der kleinsten ID.
-                if (!empty($t['klassen_id']) && !empty($t['fach_id'])) {
+                // Termine einer Klasse an DEREN individuelles Zeitraster binden:
+                // passende Rasterstunde suchen und die stunden_id daraus ableiten.
+                // Ohne sie landet der Termin im Schuelerstundenplan in der Stunde
+                // mit der kleinsten ID statt in der richtigen.
+                // Das gilt fuer Schulfaecher UND Aktivitaeten - Aktivitaeten waren
+                // hier lange ausgenommen und behielten deshalb stunden_id = NULL.
+                if (!empty($t['klassen_id']) && (!empty($t['fach_id']) || !empty($t['aktivitaet_id']))) {
                     $rast = elli_finde_rasterstunde($conn, (int)$t['klassen_id'], (string)$t['start'], $rasterCache);
                     if ($rast['status'] === 'ok') {
                         $zr = $rast['zr'];
                         $data['termine'][$idx]['stunden_id'] = (int)$zr['stunden_index'];
-                        $data['termine'][$idx]['start']      = $zr['startzeit'];
-                        $data['termine'][$idx]['ende']       = $zr['endzeit'];
-                        // lokale Kopie fuer die nachfolgende Konfliktpruefung mitziehen
-                        $t['start'] = $zr['startzeit'];
-                        $t['ende']  = $zr['endzeit'];
+
+                        // Start/Ende nur dann auf die Rasterstunde ziehen, wenn der
+                        // Termin auch hineinpasst. Ein laengerer Alt-Termin (z.B. 120
+                        // Minuten) wuerde sonst stillschweigend auf 45 Minuten
+                        // gekuerzt - der gehoert stattdessen in mehrere Stunden
+                        // zerlegt (siehe action=migriere_aktivitaetsraster).
+                        $endeNorm = substr((string)$t['ende'], 0, 8);
+                        if (strlen($endeNorm) === 5) $endeNorm .= ':00';
+                        if ($endeNorm <= $zr['endzeit']) {
+                            $data['termine'][$idx]['start'] = $zr['startzeit'];
+                            $data['termine'][$idx]['ende']  = $zr['endzeit'];
+                            // lokale Kopie fuer die nachfolgende Konfliktpruefung mitziehen
+                            $t['start'] = $zr['startzeit'];
+                            $t['ende']  = $zr['endzeit'];
+                        }
                     } elseif ($rast['status'] === 'no_match') {
                         $blocker[] = "🕒 Klasse {$rast['name']}: " . substr((string)$t['start'], 0, 5) .
                             " passt in keine Schulstunde des Klassenrasters.";
@@ -3454,7 +3465,11 @@ if ($action === 'get_raum_verfuegbarkeit') {
                   $klassenId = !empty($t['klassen_id']) ? $t['klassen_id'] : null;
                   $aktId     = !empty($t['aktivitaet_id']) ? $t['aktivitaet_id'] : null;
                   $fachId    = !empty($t['fach_id']) ? $t['fach_id'] : null;
-                  $stundenId = !empty($t['stunden_id']) ? $t['stunden_id'] : null;
+                  // Achtung: die erste Rasterstunde hat den Index 0. !empty() haette sie
+                  // als "leer" verworfen und stunden_id auf NULL gesetzt - der Termin
+                  // waere im Schuelerstundenplan wieder ohne Zuordnung gelandet.
+                  $stundenId = (!isset($t['stunden_id']) || $t['stunden_id'] === '')
+                      ? null : (int)$t['stunden_id'];
                   $isDiff    = !empty($t['is_differenzierung']) ? 1 : 0;
 
                   if ($isNew) {
@@ -3605,7 +3620,9 @@ if ($action === 'get_raum_verfuegbarkeit') {
               // Aktivität (aktivitaet.einsatzort) und wird beim Lesen von dort geholt.
               $klassenId  = !empty($t['klassen_id']) ? $t['klassen_id'] : null;
               $aktId      = !empty($t['aktivitaet_id']) ? $t['aktivitaet_id'] : null;
-              $stundenId  = !empty($t['stunden_id']) ? $t['stunden_id'] : null;
+              // Erste Rasterstunde hat Index 0 - siehe Hinweis im Lehrerstundenplan.
+              $stundenId  = (!isset($t['stunden_id']) || $t['stunden_id'] === null || $t['stunden_id'] === '')
+                  ? null : (int)$t['stunden_id'];
               $isDiff     = !empty($t['is_differenzierung']) ? 1 : 0;
 
               if ($isNew) {
