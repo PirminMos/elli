@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "cbca806",
+      "hash": "73dc190",
+      "date": "2026-09-06",
+      "subject": "Feature: Schuelerstundenplan - hoehere Zeilen als Ausgleich"
+    },
+    {
+      "hash": "b4b0665",
       "date": "2026-09-06",
       "subject": "Feature: Schuelerstundenplan endet um 15:30, Unterschriften neutral"
     },
@@ -495,11 +500,6 @@
       "hash": "a040e75",
       "date": "2026-07-14",
       "subject": "Fix: Neu erstellter Raum im Lehrerplan auswaehlbar"
-    },
-    {
-      "hash": "09c071b",
-      "date": "2026-07-14",
-      "subject": "Feature: Onboarding-Modal erzwingt Schuljahr-Anlage beim ersten Start"
     }
   ]
 }

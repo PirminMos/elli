@@ -3314,6 +3314,14 @@ if ($action === 'export_schuelerstundenplan') {
         $headCells = [$tcell($para('Unterrichtszeit', true, 18, 'center'), $ZW, 1, 'D9D9D9')];
         foreach (['Montag','Dienstag','Mittwoch','Donnerstag','Freitag'] as $tagName)
             $headCells[] = $tcell($para($tagName, true, 18, 'center'), $DAYW, 2, 'D9D9D9');
+        // Zeilenhoehe der Schulstunden. Seit der Plan um 15:30 endet, faellt
+        // eine der zehn Rasterstunden weg. Die 460 Twips dieser Zeile werden
+        // auf die verbleibenden neun verteilt (10 * 460 / 9 = 511), damit die
+        // Tabelle das Blatt weiterhin genauso hoch fuellt wie zuvor.
+        // Ohne hRule bleibt das eine Mindesthoehe - Zellen mit Fach UND
+        // Lehrername koennen weiterhin wachsen.
+        $WT_ZEILE = 511;
+
         $wtRows = [$trow($headCells, 320)];
 
         // Inhalt einer Rasterzelle: Fach fett, darunter der Lehrername deutlich
@@ -3346,12 +3354,12 @@ if ($action === 'export_schuelerstundenplan') {
                     $cells[] = $tcell($inhalt, $DAYW, 2);
                 }
             }
-            $wtRows[] = $trow($cells, 460);
+            $wtRows[] = $trow($cells, $WT_ZEILE);
         }
         if (empty($raster)) {
             $leer = [$tcell($para('', false, 18, 'center'), $ZW)];
             foreach ($tagKey as $tag) $leer[] = $tcell($para('----', false, 18, 'center'), $DAYW, 2);
-            $wtRows[] = $trow($leer, 460);
+            $wtRows[] = $trow($leer, $WT_ZEILE);
         }
         $timetable = $tbl($gridWT, $wtRows);
         // Legende gehoert unter die Stundentafel (rechte Spalte). Die ist nur
@@ -3404,7 +3412,7 @@ if ($action === 'export_schuelerstundenplan') {
         // Zielhoehe = Kopf + Wochenraster links (die Stundentafel steht jetzt
         // rechts neben beiden und reicht bis ganz nach oben), abzueglich der
         // einen Legendenzeile, die unter der Stundentafel steht.
-        $ttMin = (2 * $KH) + 320 + max(1, count($raster)) * 460 - 200;
+        $ttMin = (2 * $KH) + 320 + max(1, count($raster)) * $WT_ZEILE - 200;
         $fixH  = 320 + 300 + 300 + count($tafel) * 280 + 300 + 300 + 300; // Titel,Kopf,Pflicht-Label,Fächer,Wahlpfl-Label,Wahlf-Label,Summe
         $rest = (int)floor(($ttMin - $fixH) / 300) - ($emptyPflicht + $emptyWahlpflicht + $emptyWahlfaecher);
         if ($rest > 0) $emptyPflicht += $rest;
