@@ -38,6 +38,12 @@ services:
       DB_NAME: "${DB_NAME:-elli}"
       DB_USER: "${DB_USER:-elli_user}"
       DB_PASSWORD: "${DB_PASSWORD:-1234}"
+    volumes:
+      # Nur lesend: Beim Erststart kann das Willkommens-Modal die bereits
+      # vorhandenen Sicherungen auflisten und eine davon einspielen. Der
+      # web-Container darf sie dabei nicht veraendern oder loeschen - das
+      # bleibt allein Sache des backup-Containers.
+      - ./backups:/backups:ro
     depends_on:
       db:
         condition: service_healthy
@@ -81,8 +87,8 @@ services:
       DB_NAME: "${DB_NAME:-elli}"
       DB_USER: "${DB_USER:-elli_user}"
       DB_PASSWORD: "${DB_PASSWORD:-1234}"
-      BACKUP_INTERVAL: "${BACKUP_INTERVAL:-21600}"   # Standard: alle 6 Stunden
-      BACKUP_KEEP: "${BACKUP_KEEP:-28}"              # Standard: 28 Dateien behalten
+      BACKUP_INTERVAL: "${BACKUP_INTERVAL:-86400}"   # Standard: taeglich (24 Stunden)
+      BACKUP_KEEP: "${BACKUP_KEEP:-5}"               # Standard: 5 Dateien behalten
     volumes:
       - ./backups:/backups
       - ./docker/backup/backup-loop.sh:/backup-loop.sh:ro

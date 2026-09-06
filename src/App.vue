@@ -1826,28 +1826,87 @@
           <div class="modal-header">
             <h3><span class="icon">🎓</span> Willkommen bei elli</h3>
           </div>
-          <div class="modal-body">
-            <p style="margin-bottom: 1rem; line-height: 1.5;">
-              Um loszulegen, muss zuerst ein <strong>Schuljahr</strong> angelegt werden.
-              Ohne Schuljahr lassen sich keine Klassen, Lehrkräfte oder Pläne erstellen.
+          <!-- Ansicht A: neues Schuljahr anlegen (Normalfall) -->
+          <template v-if="onboardingView === 'neu'">
+            <div class="modal-body">
+              <p style="margin-bottom: 1rem; line-height: 1.5;">
+                Um loszulegen, muss zuerst ein <strong>Schuljahr</strong> angelegt werden.
+                Ohne Schuljahr lassen sich keine Klassen, Lehrkräfte oder Pläne erstellen.
+              </p>
+              <div class="input-floating-group">
+                <label>Schuljahr:</label>
+                <input v-model="onboarding.schuljahr" placeholder="z.B. 25/26" class="glass-input-large"
+                       @keyup.enter="createFirstSchuljahr">
+              </div>
+              <div class="input-floating-group">
+                <label>Name der Schule (optional):</label>
+                <input v-model="onboarding.schulname" placeholder="z.B. Grundschule Musterhausen"
+                       class="glass-input-large" @keyup.enter="createFirstSchuljahr">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="glass-btn-save" :disabled="!onboarding.schuljahr.trim() || onboardingSaving"
+                      @click="createFirstSchuljahr">
+                {{ onboardingSaving ? 'Wird angelegt…' : "Los geht's" }}
+              </button>
+              <button class="glass-btn-cancel" @click="openBackupImport">
+                Backup einspielen
+              </button>
+            </div>
+            <p class="hint-text-small">
+              Umzug von einem anderen Rechner? Dann statt eines neuen Schuljahres das Backup einspielen.
             </p>
-            <div class="input-floating-group">
-              <label>Schuljahr:</label>
-              <input v-model="onboarding.schuljahr" placeholder="z.B. 25/26" class="glass-input-large"
-                     @keyup.enter="createFirstSchuljahr">
+          </template>
+
+          <!-- Ansicht B: vorhandenes Backup einspielen (Migration) -->
+          <template v-else>
+            <div class="modal-body">
+              <p style="margin-bottom: 1rem; line-height: 1.5;">
+                Hier wird der <strong>komplette Datenbestand</strong> aus einer Sicherung
+                übernommen – alle Schuljahre, Klassen, Lehrkräfte, Räume und Pläne.
+              </p>
+
+              <!-- Auf diesem Rechner vorhandene Sicherungen -->
+              <div v-if="backupImport.ladeListe" class="backup-hinweis">Sicherungen werden gesucht…</div>
+              <template v-else-if="backupImport.liste.length">
+                <label class="backup-label">Auf diesem Rechner vorhanden:</label>
+                <div class="backup-liste">
+                  <button v-for="b in backupImport.liste" :key="b.name" type="button"
+                          class="backup-eintrag" :class="{ aktiv: backupImport.auswahl === b.name }"
+                          :disabled="backupImport.laeuft"
+                          @click="waehleServerBackup(b.name)">
+                    <span class="backup-eintrag-datum">{{ formatBackupDatum(b.datum) }}</span>
+                    <span class="backup-eintrag-meta">{{ formatDateigroesse(b.groesse) }}</span>
+                  </button>
+                </div>
+              </template>
+              <div v-else class="backup-hinweis">
+                Auf diesem Rechner liegen noch keine Sicherungen – bitte die Datei unten auswählen.
+              </div>
+
+              <!-- Datei vom eigenen Rechner -->
+              <label class="backup-label">Oder eine Datei auswählen (.sql):</label>
+              <input ref="backupDateiFeld" type="file" accept=".sql,application/sql,text/plain"
+                     class="backup-upload" :disabled="backupImport.laeuft" @change="waehleBackupDatei">
+
+              <p class="backup-warnung">
+                Achtung: Vorhandene Daten in der Datenbank werden dabei vollständig ersetzt.
+                Das lässt sich nicht rückgängig machen.
+              </p>
+              <p v-if="backupImport.fehler" class="backup-fehler">{{ backupImport.fehler }}</p>
             </div>
-            <div class="input-floating-group">
-              <label>Name der Schule (optional):</label>
-              <input v-model="onboarding.schulname" placeholder="z.B. Grundschule Musterhausen"
-                     class="glass-input-large" @keyup.enter="createFirstSchuljahr">
+            <div class="modal-footer">
+              <button class="glass-btn-save"
+                      :disabled="!backupImportBereit || backupImport.laeuft"
+                      @click="importiereBackup">
+                {{ backupImport.laeuft ? 'Wird eingespielt…' : 'Backup einspielen' }}
+              </button>
+              <button class="glass-btn-cancel" :disabled="backupImport.laeuft"
+                      @click="onboardingView = 'neu'">
+                Zurück
+              </button>
             </div>
-          </div>
-          <div class="modal-footer">
-            <button class="glass-btn-save" :disabled="!onboarding.schuljahr.trim() || onboardingSaving"
-                    @click="createFirstSchuljahr">
-              {{ onboardingSaving ? 'Wird angelegt…' : "Los geht's" }}
-            </button>
-          </div>
+          </template>
         </div>
       </div>
 
@@ -3857,12 +3916,106 @@ input:checked + .slider:before {
   color: white;
 }
 
+/* Deaktivierte Modal-Buttons sollen auch deaktiviert aussehen - sonst
+   wirkt etwa "Backup einspielen" klickbar, obwohl noch keine Quelle
+   gewaehlt ist. */
+.glass-btn-save:disabled,
+.glass-btn-cancel:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .hint-text-small {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
   margin-top: 10px;
   text-align: center;
   font-style: italic;
+}
+
+/* --- Backup-Import im Willkommens-Modal --- */
+.backup-label {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 14px 0 6px;
+}
+
+.backup-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.backup-eintrag {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.07);
+  color: white;
+  cursor: pointer;
+  text-align: left;
+}
+
+.backup-eintrag:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.backup-eintrag.aktiv {
+  background: rgba(76, 175, 80, 0.28);
+  border-color: rgba(76, 175, 80, 0.75);
+}
+
+.backup-eintrag-datum {
+  font-weight: 600;
+}
+
+.backup-eintrag-meta {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.backup-upload {
+  width: 100%;
+  padding: 9px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+}
+
+.backup-hinweis {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  padding: 4px 0;
+}
+
+.backup-warnung {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 152, 0, 0.15);
+  border: 1px solid rgba(255, 152, 0, 0.45);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.backup-fehler {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(244, 67, 54, 0.18);
+  border: 1px solid rgba(244, 67, 54, 0.5);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .raum-grid-selection {
@@ -5799,6 +5952,16 @@ export default {
       showOnboardingModal: false,
       onboarding: {schuljahr: '25/26', schulname: ''},
       onboardingSaving: false,
+      // Erststart: 'neu' = Schuljahr anlegen, 'import' = Backup einspielen
+      onboardingView: 'neu',
+      backupImport: {
+        liste: [],          // Sicherungen aus ./backups (via backup_list)
+        ladeListe: false,
+        auswahl: '',        // Dateiname aus der Liste
+        datei: null,        // File-Objekt aus dem Datei-Dialog
+        laeuft: false,
+        fehler: '',
+      },
       // Eigener elli-Dialog statt nativer confirm()/alert()-Fenster
       dialog: {show: false, mode: 'alert', title: '', message: '', okText: 'OK', cancelText: 'Abbrechen', _resolve: null},
       dragOverCell: null,
@@ -5912,6 +6075,10 @@ export default {
     }
   },
   computed: {
+    // Eingespielt werden kann nur, wenn genau eine Quelle feststeht.
+    backupImportBereit() {
+      return !!(this.backupImport.datei || this.backupImport.auswahl);
+    },
     // Die drei Auswahlspalten des Gesamtplans.
     gesamtplanSpalten() {
       return [
@@ -6708,6 +6875,101 @@ export default {
       this.dialog._resolve = null;
       if (r) r(result);
     },
+    // --- Backup-Import beim Erststart -------------------------------
+    // Wechselt im Willkommens-Modal auf die Import-Ansicht und laedt die
+    // Sicherungen, die der Backup-Container auf diesem Rechner abgelegt hat.
+    openBackupImport() {
+      this.onboardingView = 'import';
+      this.backupImport.fehler = '';
+      this.fetchBackupListe();
+    },
+
+    async fetchBackupListe() {
+      this.backupImport.ladeListe = true;
+      try {
+        const response = await fetch(`${API_URL}?action=backup_list`);
+        const data = await response.json();
+        this.backupImport.liste = Array.isArray(data.backups) ? data.backups : [];
+      } catch (e) {
+        // Kein Beinbruch: der Upload-Weg funktioniert unabhaengig davon.
+        console.warn('Backup-Liste konnte nicht geladen werden:', e);
+        this.backupImport.liste = [];
+      } finally {
+        this.backupImport.ladeListe = false;
+      }
+    },
+
+    // Liste und Datei-Dialog schliessen sich gegenseitig aus - sonst waere
+    // unklar, welche der beiden Quellen eingespielt wird.
+    waehleServerBackup(name) {
+      this.backupImport.auswahl = name;
+      this.backupImport.datei = null;
+      if (this.$refs.backupDateiFeld) this.$refs.backupDateiFeld.value = '';
+      this.backupImport.fehler = '';
+    },
+
+    waehleBackupDatei(event) {
+      this.backupImport.datei = event.target.files[0] || null;
+      if (this.backupImport.datei) this.backupImport.auswahl = '';
+      this.backupImport.fehler = '';
+    },
+
+    async importiereBackup() {
+      const b = this.backupImport;
+      if (b.laeuft || (!b.datei && !b.auswahl)) return;
+      b.laeuft = true;
+      b.fehler = '';
+      try {
+        let response;
+        if (b.datei) {
+          // Upload: kein Content-Type setzen, der Browser ergaenzt die
+          // multipart-Boundary selbst.
+          const fd = new FormData();
+          fd.append('datei', b.datei);
+          response = await fetch(`${API_URL}?action=import_backup`, {method: 'POST', body: fd});
+        } else {
+          response = await fetch(`${API_URL}?action=import_backup`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({datei: b.auswahl})
+          });
+        }
+
+        const result = await response.json().catch(() => ({
+          success: false, error: 'Unerwartete Antwort vom Server.'
+        }));
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Der Import ist fehlgeschlagen.');
+        }
+
+        // Frisch eingespielter Bestand -> Oberflaeche komplett neu laden
+        await this.fetchSchuljahre();
+        this.showOnboardingModal = false;
+        if (this.currentSchuljahrId) await this.loadFromDatabase();
+        this.showStatus(
+          `Backup eingespielt: ${result.tabellen} Tabellen, ${result.schuljahre} Schuljahr(e).`
+        );
+      } catch (e) {
+        console.error('Fehler beim Einspielen des Backups:', e);
+        b.fehler = e.message;
+      } finally {
+        b.laeuft = false;
+      }
+    },
+
+    formatDateigroesse(bytes) {
+      if (typeof bytes !== 'number') return '';
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    },
+
+    // '2026-09-06 18:40:52' -> '06.09.2026, 18:40'
+    formatBackupDatum(datum) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(datum || '');
+      return m ? `${m[3]}.${m[2]}.${m[1]}, ${m[4]}:${m[5]}` : (datum || '');
+    },
+
     async createFirstSchuljahr() {
       const jahr = (this.onboarding.schuljahr || '').trim();
       if (!jahr || this.onboardingSaving) return;

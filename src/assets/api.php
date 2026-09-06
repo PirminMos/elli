@@ -570,6 +570,322 @@ if ($action === 'migriere_aktivitaetsraster') {
     exit;
 }
 
+// =====================================================================
+// Backup-Import (Migration)
+//
+// Zweck: Auf einer frischen Installation (leere Datenbank) statt eines
+// neuen Schuljahres den kompletten Datenbestand aus einem Backup
+// uebernehmen - entweder aus einer hochgeladenen .sql-Datei (Umzug von
+// einem anderen Rechner) oder aus einer Datei, die der Backup-Container
+// bereits nach ./backups geschrieben hat.
+//
+// Warum ein eigener SQL-Parser statt "mariadb < dump.sql"?
+// Im web-Container ist bewusst kein MariaDB-Client installiert (nur
+// pdo_mysql). Der Dump wird deshalb hier in einzelne Statements zerlegt
+// und ueber PDO ausgefuehrt.
+// =====================================================================
+
+const ELLI_BACKUP_DIR = '/backups';
+
+// Tabellen, die ein echter elli-Dump enthalten muss. Schutz davor,
+// versehentlich einen fremden Dump einzuspielen.
+const ELLI_PFLICHT_TABELLEN = ['schule', 'termin', 'klassen', 'erstkraft'];
+
+/**
+ * Zerlegt einen mariadb-dump in einzelne ausfuehrbare Statements.
+ *
+ * Ein naives explode(';') scheitert an Semikolons innerhalb von Strings
+ * (etwa in Freitextfeldern). Deshalb wird zeichenweise gelesen und der
+ * Zustand mitgefuehrt: Strings, Backtick-Bezeichner, Escape-Sequenzen
+ * sowie Zeilen- und Blockkommentare.
+ *
+ * Kommentare werden vollstaendig entfernt, auch die bedingten (jene, die
+ * mit Slash-Stern-Ausrufezeichen und einer Versionsnummer beginnen).
+ * Deren Inhalt ist ausschliesslich Sitzungs-Setup
+ * (SET NAMES, FOREIGN_KEY_CHECKS ...), das elli_import_sql() ohnehin
+ * selbst und explizit setzt. Blieben sie stehen, landeten Statements wie
+ * "SET AUTOCOMMIT=@OLD_AUTOCOMMIT" in der Ausfuehrung, deren Variablen in
+ * unserer Sitzung nie gesetzt wurden.
+ *
+ * @return string[] Statements ohne abschliessendes Semikolon
+ */
+function elli_split_sql($sql) {
+    $stmts = [];
+    $buf   = '';
+    $len   = strlen($sql);
+    $i     = 0;
+    $inSingle = false;
+    $inDouble = false;
+    $inTick   = false;
+
+    while ($i < $len) {
+        $c = $sql[$i];
+        $n = ($i + 1 < $len) ? $sql[$i + 1] : '';
+
+        // --- innerhalb eines Strings: nur Escape und Ende beachten ---
+        if ($inSingle || $inDouble) {
+            if ($c === '\\' && $n !== '') {          // \' \\ \n ... immer zwei Zeichen
+                $buf .= $c . $n;
+                $i += 2;
+                continue;
+            }
+            $buf .= $c;
+            if ($inSingle && $c === "'") $inSingle = false;
+            elseif ($inDouble && $c === '"') $inDouble = false;
+            $i++;
+            continue;
+        }
+        if ($inTick) {
+            $buf .= $c;
+            if ($c === '`') $inTick = false;
+            $i++;
+            continue;
+        }
+
+        // --- ausserhalb von Strings ---
+        if ($c === "'") { $inSingle = true; $buf .= $c; $i++; continue; }
+        if ($c === '"') { $inDouble = true; $buf .= $c; $i++; continue; }
+        if ($c === '`') { $inTick   = true; $buf .= $c; $i++; continue; }
+
+        // Zeilenkommentar: "#" oder "--" gefolgt von Whitespace/Zeilenende
+        if ($c === '#' || ($c === '-' && $n === '-' &&
+                ($i + 2 >= $len || strpos(" \t\r\n", $sql[$i + 2]) !== false))) {
+            while ($i < $len && $sql[$i] !== "\n") $i++;
+            continue;
+        }
+
+        // Blockkommentar, inklusive der bedingten Varianten
+        if ($c === '/' && $n === '*') {
+            $end = strpos($sql, '*/', $i + 2);
+            if ($end === false) break;               // unabgeschlossen -> Rest verwerfen
+            $i = $end + 2;
+            continue;
+        }
+
+        if ($c === ';') {
+            $t = trim($buf);
+            if ($t !== '') $stmts[] = $t;
+            $buf = '';
+            $i++;
+            continue;
+        }
+
+        $buf .= $c;
+        $i++;
+    }
+
+    $t = trim($buf);
+    if ($t !== '') $stmts[] = $t;
+    return $stmts;
+}
+
+/**
+ * Entscheidet, ob ein Statement aus dem Dump ausgefuehrt werden soll.
+ *
+ * Uebersprungen werden:
+ *  - SET ...             Sitzungs-Setup machen wir selbst (siehe oben)
+ *  - LOCK/UNLOCK TABLES  reine Tempo-Optimierung des Dumps; mit aktiven
+ *                        Table-Locks scheitern Statements auf noch nicht
+ *                        gesperrten Tabellen
+ *  - USE / CREATE DATABASE   die Zieldatenbank steht bereits fest
+ */
+function elli_skip_stmt($stmt) {
+    return (bool) preg_match(
+        '~^\s*(SET\s|LOCK\s+TABLES|UNLOCK\s+TABLES|USE\s|CREATE\s+DATABASE)~i',
+        $stmt
+    );
+}
+
+/**
+ * Spielt einen kompletten Dump ein.
+ *
+ * Bewusste Einschraenkung: DDL (DROP/CREATE TABLE) loest in MariaDB ein
+ * implizites COMMIT aus. Ein Rollback ueber die gesamte Einspielung ist
+ * damit technisch nicht moeglich - bricht es mittendrin ab, bleibt ein
+ * Teilstand zurueck. Vertretbar, weil jeder mariadb-dump je Tabelle mit
+ * "DROP TABLE IF EXISTS" beginnt: ein zweiter Versuch mit derselben Datei
+ * raeumt den Teilstand wieder auf.
+ *
+ * @return array{statements:int, tabellen:string[]}
+ */
+function elli_import_sql(PDO $conn, $sql) {
+    $stmts = elli_split_sql($sql);
+    if (!$stmts) {
+        throw new RuntimeException('Die Datei enthaelt keine ausfuehrbaren SQL-Anweisungen.');
+    }
+
+    $conn->exec("SET NAMES utf8mb4");
+    $conn->exec("SET FOREIGN_KEY_CHECKS = 0");
+    $conn->exec("SET UNIQUE_CHECKS = 0");
+    $conn->exec("SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO'");
+
+    $ausgefuehrt = 0;
+    $tabellen    = [];
+    try {
+        foreach ($stmts as $nr => $stmt) {
+            if (elli_skip_stmt($stmt)) continue;
+            try {
+                $conn->exec($stmt);
+            } catch (PDOException $e) {
+                // Nummer und Anfang mitgeben - sonst ist ein Fehler in
+                // einem 40.000 Zeichen langen INSERT nicht auffindbar.
+                throw new RuntimeException(sprintf(
+                    'Fehler bei Anweisung %d (%s ...): %s',
+                    $nr + 1,
+                    substr(preg_replace('~\s+~', ' ', $stmt), 0, 80),
+                    $e->getMessage()
+                ));
+            }
+            if (preg_match('~^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?~i', $stmt, $m)) {
+                $tabellen[] = $m[1];
+            }
+            $ausgefuehrt++;
+        }
+    } finally {
+        // Pruefungen in jedem Fall wieder scharf schalten
+        try {
+            $conn->exec("SET FOREIGN_KEY_CHECKS = 1");
+            $conn->exec("SET UNIQUE_CHECKS = 1");
+        } catch (PDOException $e) { /* Verbindung ohnehin hinueber */ }
+    }
+
+    return ['statements' => $ausgefuehrt, 'tabellen' => $tabellen];
+}
+
+/** Enthaelt die Datenbank bereits Nutzdaten? (Schuljahre = Tabelle "schule") */
+function elli_db_hat_daten(PDO $conn) {
+    try {
+        return (int) $conn->query("SELECT COUNT(*) FROM schule")->fetchColumn() > 0;
+    } catch (PDOException $e) {
+        return false;   // Tabelle fehlt -> frische Installation
+    }
+}
+
+// --- Vorhandene Backups auflisten ------------------------------------
+// Liefert die Dumps, die der Backup-Container nach ./backups geschrieben
+// hat. Fehlt das Verzeichnis (Mount nicht eingerichtet), ist die Liste
+// leer - der Upload-Weg funktioniert davon unabhaengig.
+if ($action === 'backup_list') {
+    $dateien = [];
+    if (is_dir(ELLI_BACKUP_DIR)) {
+        foreach (glob(ELLI_BACKUP_DIR . '/*.sql') ?: [] as $pfad) {
+            if (!is_file($pfad)) continue;
+            $dateien[] = [
+                'name'    => basename($pfad),
+                'groesse' => filesize($pfad),
+                'datum'   => date('Y-m-d H:i:s', filemtime($pfad)),
+                'zeit'    => filemtime($pfad),
+            ];
+        }
+        usort($dateien, function ($a, $b) { return $b['zeit'] <=> $a['zeit']; });
+    }
+    echo json_encode([
+        'verzeichnis_vorhanden' => is_dir(ELLI_BACKUP_DIR),
+        'backups'               => $dateien,
+    ]);
+    exit;
+}
+
+// --- Backup einspielen ------------------------------------------------
+// Quelle entweder:
+//   multipart/form-data, Feld "datei"           -> Upload vom Rechner
+//   JSON {"datei":"elli-20260906-184052.sql"}   -> Datei aus ./backups
+if ($action === 'import_backup') {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['success' => false, 'error' => 'Nur POST erlaubt.']);
+        exit;
+    }
+
+    try {
+        $force  = false;
+        $sql    = null;
+        $quelle = '';
+
+        if (!empty($_FILES['datei']['tmp_name'])) {
+            // ---- Weg 1: Upload ----
+            $f = $_FILES['datei'];
+            if ($f['error'] !== UPLOAD_ERR_OK) {
+                $texte = [
+                    UPLOAD_ERR_INI_SIZE  => 'Die Datei ist groesser als das Serverlimit (upload_max_filesize).',
+                    UPLOAD_ERR_FORM_SIZE => 'Die Datei ist zu gross.',
+                    UPLOAD_ERR_PARTIAL   => 'Der Upload wurde abgebrochen.',
+                    UPLOAD_ERR_NO_FILE   => 'Es wurde keine Datei uebertragen.',
+                ];
+                throw new RuntimeException($texte[$f['error']] ?? ('Upload fehlgeschlagen (Code ' . $f['error'] . ').'));
+            }
+            $sql    = file_get_contents($f['tmp_name']);
+            $quelle = $f['name'];
+            $force  = !empty($_POST['force']) && $_POST['force'] !== 'false';
+        } else {
+            // ---- Weg 2: Datei aus dem Backup-Verzeichnis ----
+            $body  = json_decode(file_get_contents('php://input'), true) ?: [];
+            $name  = basename((string) ($body['datei'] ?? ''));   // basename() verhindert Pfadwechsel
+            $force = !empty($body['force']);
+            if ($name === '' || substr($name, -4) !== '.sql') {
+                throw new RuntimeException('Keine Backup-Datei angegeben.');
+            }
+            $pfad = ELLI_BACKUP_DIR . '/' . $name;
+            if (!is_file($pfad)) {
+                throw new RuntimeException('Backup nicht gefunden: ' . $name);
+            }
+            $sql    = file_get_contents($pfad);
+            $quelle = $name;
+        }
+
+        if ($sql === false || trim($sql) === '') {
+            throw new RuntimeException('Die Backup-Datei ist leer oder nicht lesbar.');
+        }
+
+        // --- Plausibilitaet: ist das ueberhaupt ein elli-Dump? ---
+        if (stripos($sql, 'CREATE TABLE') === false) {
+            throw new RuntimeException('Die Datei enthaelt kein CREATE TABLE - das ist kein vollstaendiger Datenbank-Dump.');
+        }
+        $fehlend = [];
+        foreach (ELLI_PFLICHT_TABELLEN as $t) {
+            if (stripos($sql, '`' . $t . '`') === false) $fehlend[] = $t;
+        }
+        if ($fehlend) {
+            throw new RuntimeException(
+                'Das sieht nicht nach einem elli-Backup aus - diese Tabellen fehlen: ' . implode(', ', $fehlend)
+            );
+        }
+
+        // --- Schutz: vorhandene Daten nie unbemerkt ueberschreiben ---
+        if (!$force && elli_db_hat_daten($conn)) {
+            http_response_code(409);
+            echo json_encode([
+                'success'       => false,
+                'braucht_force' => true,
+                'error'         => 'Die Datenbank enthaelt bereits Daten. Das Einspielen wuerde sie vollstaendig ersetzen.',
+            ]);
+            exit;
+        }
+
+        $start  = microtime(true);
+        $report = elli_import_sql($conn, $sql);
+        $dauer  = round((microtime(true) - $start) * 1000);
+
+        $anzahlSchuljahre = 0;
+        try {
+            $anzahlSchuljahre = (int) $conn->query("SELECT COUNT(*) FROM schule")->fetchColumn();
+        } catch (PDOException $e) { /* egal, nur fuer die Rueckmeldung */ }
+
+        echo json_encode([
+            'success'    => true,
+            'quelle'     => $quelle,
+            'statements' => $report['statements'],
+            'tabellen'   => count($report['tabellen']),
+            'schuljahre' => $anzahlSchuljahre,
+            'dauer_ms'   => $dauer,
+        ]);
+    } catch (Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 if ($action === 'get_schuljahre') {
     try {
         elli_ensure_schule_columns($conn);

@@ -30,6 +30,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Apache: mod_rewrite (SPA-Fallback) aktivieren
 RUN a2enmod rewrite
 
+# Backup-Import: Beim Umzug auf einen neuen Rechner wird ein kompletter
+# Datenbank-Dump hochgeladen. Die PHP-Standardwerte (2M Upload / 8M POST)
+# sind dafuer zu knapp - ein gewachsener Dump liegt schnell darueber.
+RUN { \
+      echo 'upload_max_filesize = 64M'; \
+      echo 'post_max_size = 64M'; \
+      echo 'memory_limit = 256M'; \
+    } > /usr/local/etc/php/conf.d/elli-import.ini
+
 # Composer aus offiziellem Image übernehmen
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

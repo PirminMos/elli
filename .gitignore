@@ -1,3 +1,8 @@
+# Lokale Umgebungsvariablen (Zugangsdaten)
+.env
+.env.*
+!.env.example
+
 # Datenbank-Backups (automatischer Backup-Container + manuelle Dumps)
 backups/
 *.sql

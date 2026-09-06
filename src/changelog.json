@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "4247b39",
+      "hash": "a462751",
+      "date": "2026-09-06",
+      "subject": "Feature: Backup beim Erststart einspielen (Migration)"
+    },
+    {
+      "hash": "b231a5e",
       "date": "2026-09-06",
       "subject": "Feature: Lehrerstundenplan zeigt den Mitersteller"
     },
