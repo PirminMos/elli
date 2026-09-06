@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "1c4f15d",
+      "hash": "e01ae0a",
+      "date": "2026-09-06",
+      "subject": "Fix: Exporte nachgezogen - Raster, Unterschriften, Mitersteller"
+    },
+    {
+      "hash": "779e821",
       "date": "2026-09-06",
       "subject": "Feature: Rubrik \"Genehmiger und Mitersteller\" im Burgermenue"
     },

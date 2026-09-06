@@ -3005,49 +3005,54 @@ if ($action === 'export_raumbelegungsplan') {
             return $fa !== '' ? $fa : $k;
         };
 
-        // Termine, die länger als eine Unterrichtseinheit (45 Min.) dauern, werden in
-        // einzelne 45-Minuten-Slots zerlegt (ausgehend vom eigenen Start des Termins),
-        // damit sie sich in die übrige Rasterzeile einfügen statt eine überlange
-        // Sonderzeile zu erzeugen.
-        $SLOT_MIN = 45;
-        $toMin = function ($hm) {
-            [$h, $m] = explode(':', $hm);
-            return ((int)$h) * 60 + (int)$m;
-        };
-        $toHm = function ($min) {
-            return sprintf('%02d:%02d', intdiv($min, 60), $min % 60);
-        };
+        // 2b. Das Zeitraster der Klassen dieses Schuljahres gibt die Zeilen vor.
+        //     Frueher wurde stur ab dem Terminbeginn in 45-Minuten-Bloecke zerlegt;
+        //     dabei entstanden Zeilen quer zum Schulstundenraster und die Pausen
+        //     wurden mitgezaehlt. Jetzt sind die Zeilen echte Schulstunden - eine
+        //     Pause taucht gar nicht erst als Zeile auf.
+        $stmtZ = $conn->prepare("SELECT DISTINCT z.startzeit, z.endzeit
+                                 FROM klassen_zeitraster z
+                                 JOIN klassen k ON k.id = z.klasse_id
+                                 WHERE k.schuljahr_id = ?
+                                 ORDER BY z.startzeit, z.endzeit");
+        $stmtZ->execute([$raum['schuljahr_id']]);
+        $raster = [];
+        foreach ($stmtZ->fetchAll(PDO::FETCH_ASSOC) as $z) {
+            $raster[] = ['s' => $hhmm($z['startzeit']), 'e' => $hhmm($z['endzeit'])];
+        }
 
         $tage = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
         $slots = [];      // key "s|e" => ['s'=>, 'e'=>]
         $belegung = [];   // [key][tag] = [labels]
+
+        $eintragen = function ($s, $e, $tag, $label) use (&$slots, &$belegung) {
+            $key = $s . '|' . $e;
+            $slots[$key] = ['s' => $s, 'e' => $e];
+            if (!isset($belegung[$key][$tag]) || !in_array($label, $belegung[$key][$tag], true))
+                $belegung[$key][$tag][] = $label;
+        };
+
         foreach ($stmtT->fetchAll(PDO::FETCH_ASSOC) as $t) {
             if (!in_array($t['tag'], $tage, true)) continue;
             $label = $mkLabel($t['klasse'], $t['fach'], $t['aktivitaet']);
             if ($label === '') continue;
 
-            $startMin = $toMin($hhmm($t['start']));
-            $endMin   = $toMin($hhmm($t['ende']));
+            $ts = $hhmm($t['start']);
+            $te = $hhmm($t['ende']);
 
-            if ($endMin - $startMin > $SLOT_MIN) {
-                // In 45-Minuten-Slots zerlegen
-                $cur = $startMin;
-                while ($cur < $endMin) {
-                    $chunkEnd = min($cur + $SLOT_MIN, $endMin);
-                    $s = $toHm($cur); $e = $toHm($chunkEnd);
-                    $key = $s . '|' . $e;
-                    $slots[$key] = ['s' => $s, 'e' => $e];
-                    if (!isset($belegung[$key][$t['tag']]) || !in_array($label, $belegung[$key][$t['tag']], true))
-                        $belegung[$key][$t['tag']][] = $label;
-                    $cur = $chunkEnd;
+            // Der Termin erscheint in jeder Schulstunde, die er beruehrt.
+            $getroffen = 0;
+            foreach ($raster as $r) {
+                if ($ts < $r['e'] && $te > $r['s']) {
+                    $eintragen($r['s'], $r['e'], $t['tag'], $label);
+                    $getroffen++;
                 }
-            } else {
-                $s = $hhmm($t['start']); $e = $hhmm($t['ende']);
-                $key = $s . '|' . $e;
-                $slots[$key] = ['s' => $s, 'e' => $e];
-                if (!isset($belegung[$key][$t['tag']]) || !in_array($label, $belegung[$key][$t['tag']], true))
-                    $belegung[$key][$t['tag']][] = $label;
             }
+
+            // Faellt ein Termin in gar keine Schulstunde (z.B. ein Diensteinsatz
+            // vor Unterrichtsbeginn), bekommt er seine eigene Zeile - sonst waere
+            // die Belegung im Plan unsichtbar.
+            if ($getroffen === 0) $eintragen($ts, $te, $t['tag'], $label);
         }
         // Slots nach Startzeit sortieren
         uasort($slots, function ($a, $b) {
@@ -3933,11 +3938,13 @@ if ($action === 'get_raum_verfuegbarkeit') {
           // 1. Schule (Schuljahr + Adresse als JSON {name, strasse, stadt}) samt
           //    Nachname/Titel/Genehmiger aus den Einstellungen im Burgermenue
           elli_ensure_schule_columns($conn);
-          $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger
+          $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger,
+                                          genehmiger_tagesstaette, mitersteller_dienstplan
                                    FROM schule WHERE id = ?");
           $stmtS->execute([$schuljahr_id]);
           $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
-                    ?: ['schuljahr' => '', 'adresse' => null, 'titel' => '', 'nachname' => '', 'genehmiger' => ''];
+                    ?: ['schuljahr' => '', 'adresse' => null, 'titel' => '', 'nachname' => '', 'genehmiger' => '',
+                        'genehmiger_tagesstaette' => '', 'mitersteller_dienstplan' => ''];
 
           $adresse = json_decode($schule['adresse'] ?? '', true) ?: [];
           $nameZeilen = preg_split('/\r\n|\r|\n/', trim($adresse['name'] ?? ''));
@@ -4034,8 +4041,21 @@ if ($action === 'get_raum_verfuegbarkeit') {
               $stmtU->execute();
               $ersteller = $einzeilig($stmtU->fetchColumn() ?: '');
           }
+          // Mitersteller aus dem Burgermenue ("Mitersteller Diensteinsatzplan").
+          // Er steht mit "und" auf der Zeile UNTER dem Ersteller - die Zeile im
+          // Template hat eine feste Hoehe, ein Umbruch wuerde abgeschnitten.
+          // Ohne Mitersteller bleibt die Zeile leer und der Ersteller ohne Komma.
+          $mitersteller = $einzeilig($schule['mitersteller_dienstplan'] ?? '');
+          if ($mitersteller !== '') {
+              if ($ersteller !== '') $ersteller .= ',';
+              $tpl->setValue('mitersteller', $esc('und ' . $mitersteller));
+          } else {
+              $tpl->setValue('mitersteller', '');
+          }
           $tpl->setValue('ersteller', $esc($ersteller));
           $tpl->setValue('genehmiger', $esc($einzeilig($schule['genehmiger'] ?? '')));
+          // Name hinter "durch Tagesstaettenleitung" - ebenfalls aus dem Burgermenue
+          $tpl->setValue('tagesstaettenleitung', $esc($einzeilig($schule['genehmiger_tagesstaette'] ?? '')));
 
           // Unterschriftszeile in der Fusszeile: weiblich als Standard, nur bei einer
           // als maennlich gefuehrten Zweitkraft ohne "in".
