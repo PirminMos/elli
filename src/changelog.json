@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "e12ffcd",
+      "hash": "370b71f",
+      "date": "2026-09-06",
+      "subject": "Fix: Zurueck-Taste beendet die laufende Meldung"
+    },
+    {
+      "hash": "1cf5d6b",
       "date": "2026-09-06",
       "subject": "Feature: Migration zerlegt alte Aktivitaeten in Schulstunden"
     },

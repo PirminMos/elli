@@ -9635,6 +9635,13 @@ export default {
         this.snackbar.show = false;
       }, dauer);
     },
+    // Blendet eine laufende Meldung sofort aus. Ein Hinweis gehoert zu der
+    // Ansicht, in der er entstanden ist - wer sie verlaesst, soll ihn nicht
+    // weiter vor sich haben.
+    verbergeMeldung() {
+      clearTimeout(this._snackbarTimer);
+      this.snackbar.show = false;
+    },
     // Hinweise zu belegten Raeumen, Kraeften oder Klassen. Sie halten das
     // Speichern NICHT auf - der Plan wird trotzdem geschrieben. Mehrere
     // Hinweise landen zusammen in einer Meldung, damit sie sich nicht
@@ -9671,6 +9678,11 @@ export default {
       }
     },
     async goBack() {
+      // Meldung sofort wegnehmen - noch vor der Rueckfrage zu ungespeicherten
+      // Aenderungen, damit der Klick auf Zurueck den Hinweis in jedem Fall
+      // beendet. Gilt fuer den Zurueck-Knopf wie fuer den Browser-Zurueck.
+      this.verbergeMeldung();
+
       // Ein Plan haelt abgelegte Termine bis zum Klick auf das Disketten-Symbol
       // nur im Browser. Wer den Editor vorher verlaesst, verliert sie sonst
       // kommentarlos - deshalb hier die Rueckfrage.
