@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "1a8815e",
+      "hash": "78ca651",
+      "date": "2026-09-06",
+      "subject": "Feature: Unterschriftszeilen sitzen am Seitenende"
+    },
+    {
+      "hash": "5b95cf2",
       "date": "2026-09-06",
       "subject": "Fix: \"durc\" im Lehrerstundenplan heisst wieder \"durch\""
     },
