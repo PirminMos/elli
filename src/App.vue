@@ -1072,6 +1072,15 @@
         <div class="room-timetable-main-content">
           <div class="main-header-plaene" v-if="raumVerfuegbarkeiten.find(r => r.id === activeRaumId)?.name">
             <span class="raum-plaene-head">{{ raumVerfuegbarkeiten.find(r => r.id === activeRaumId)?.name }}</span>
+            <!-- Opt-out: angehakt = vollstaendige Schulwoche wie bisher.
+                 Abgewaehlt = nur die tatsaechlichen Termine, Luecken als
+                 leere Zeilen mit ihrem Zeitraum. -->
+            <label class="raster-opt-out"
+                   title="Angehakt: der Plan zeigt die vollständigen Schulstunden, freie Stunden bleiben leer.
+Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als leere Zeilen mit ihrem Zeitraum.">
+              <input type="checkbox" v-model="standardRasterImExport">
+              <span>Standard-Zeitraster beim Export anwenden</span>
+            </label>
             <button
                 class="glass-btn btn-save-small"
                 title="Als Word-Datei exportieren"
@@ -4520,6 +4529,30 @@ input:checked + .slider:before {
   gap: 20px;
 }
 
+/* Ankreuzfeld neben dem Export-Knopf der Raumplanung */
+.raster-opt-out {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  user-select: none;
+}
+
+.raster-opt-out:hover {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.raster-opt-out input {
+  width: 16px;
+  height: 16px;
+  accent-color: #37c46a;
+  cursor: pointer;
+  flex: none;
+}
+
 .glass-input-class {
   width: 100%;
   background: #1c1c1c;
@@ -6038,6 +6071,9 @@ export default {
       onboardingSaving: false,
       // Erststart: 'neu' = Schuljahr anlegen, 'import' = Backup einspielen
       onboardingView: 'neu',
+      // Raumbelegungsplan-Export: angehakt = Standard-Zeitraster (Vorgabe).
+      // Bewusst nicht gespeichert - beim Neuladen steht der Haken wieder.
+      standardRasterImExport: true,
       // Sicherung auf Knopfdruck (Startbildschirm, neben "Aktualisieren")
       backupErstellen: {
         laeuft: false,
@@ -8664,7 +8700,8 @@ export default {
         this.showStatus("Kein Raum ausgewählt", "error");
         return;
       }
-      const url = `${API_URL}?action=export_raumbelegungsplan&raumId=${this.activeRaumId}`;
+      const url = `${API_URL}?action=export_raumbelegungsplan&raumId=${this.activeRaumId}`
+          + `&standardRaster=${this.standardRasterImExport ? 1 : 0}`;
       window.open(url, '_blank');
     },
     cancelAssignment() {

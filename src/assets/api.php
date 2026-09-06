@@ -3531,40 +3531,54 @@ if ($action === 'export_raumbelegungsplan') {
 
         // Label je Termin: Klasse + Fach/Aktivität (ohne Dubletten)
         $mkLabel = function ($klasse, $fach, $akt) {
-            $fa = trim((string)($fach !== '' && $fach !== null ? $fach : $akt));
-            $k  = trim((string)$klasse);
-            if ($k !== '' && $fa !== '' && stripos($fa, $k) === false && stripos($k, $fa) === false)
-                return $k . ' ' . $fa;
-            return $fa !== '' ? $fa : $k;
+            $fach = trim((string)$fach);
+            $akt  = trim((string)$akt);
+            $k    = trim((string)$klasse);
+
+            // Unterricht: nur die Klasse. Welches Fach dort liegt, steht im
+            // Stundenplan der Klasse und machte den Raumplan nur voller.
+            // Rueckfall auf den Fachnamen, falls einem Termin die Klasse
+            // fehlt - sonst waere die Belegung im Plan unsichtbar.
+            if ($fach !== '') return $k !== '' ? $k : $fach;
+
+            // Aktivitaet: nur ihr Name, ohne Klasse davor.
+            if ($akt !== '') return $akt;
+
+            return $k;
         };
 
-        // 2b. Das Zeitraster der Klassen dieses Schuljahres gibt die Zeilen vor.
-        //     Frueher wurde stur ab dem Terminbeginn in 45-Minuten-Bloecke zerlegt;
-        //     dabei entstanden Zeilen quer zum Schulstundenraster und die Pausen
-        //     wurden mitgezaehlt. Jetzt sind die Zeilen echte Schulstunden - eine
-        //     Pause taucht gar nicht erst als Zeile auf.
-        $stmtZ = $conn->prepare("SELECT DISTINCT z.startzeit, z.endzeit
-                                 FROM klassen_zeitraster z
-                                 JOIN klassen k ON k.id = z.klasse_id
-                                 WHERE k.schuljahr_id = ?
-                                 ORDER BY z.startzeit, z.endzeit");
-        $stmtZ->execute([$raum['schuljahr_id']]);
-        $raster = [];
-        foreach ($stmtZ->fetchAll(PDO::FETCH_ASSOC) as $z) {
-            $raster[] = ['s' => $hhmm($z['startzeit']), 'e' => $hhmm($z['endzeit'])];
-        }
+        // 2b. Zeilen des Plans festlegen. Zwei Betriebsarten, gesteuert ueber
+        //     den Parameter "standardRaster" (Vorgabe: an):
+        //
+        //     AN   Die Zeilen kommen aus dem Zeitraster der Klassen. Der Plan
+        //          zeigt die vollstaendige Schulwoche, freie Stunden bleiben
+        //          leere Felder, Pausen tauchen gar nicht erst als Zeile auf.
+        //          Alle Raeume sehen dadurch gleich aus.
+        //     AUS  Nur die tatsaechlichen Termine bilden Zeilen. Zeitliche
+        //          Luecken dazwischen werden als leere Zeile mit ihrem
+        //          Zeitraum ausgewiesen, ebenso die Raender bis PLAN_START
+        //          bzw. PLAN_ENDE.
+        //
+        //     In beiden Faellen endet der Plan spaetestens um PLAN_ENDE.
+        $standardRaster = !isset($_GET['standardRaster'])
+            || !in_array(strtolower(trim((string)$_GET['standardRaster'])), ['0', 'false', 'nein', 'aus'], true);
 
-        $tage = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
-        $slots = [];      // key "s|e" => ['s'=>, 'e'=>]
+        $PLAN_START = '07:45';
+        $PLAN_ENDE  = '15:30';
+
+        // Was ueber das Planende hinausreicht, wird gekappt; was komplett
+        // dahinter liegt, entfaellt. Zeiten sind "HH:MM" und damit als
+        // Zeichenkette in der richtigen Reihenfolge vergleichbar.
+        $begrenzen = function ($s, $e) use ($PLAN_ENDE) {
+            if ($s >= $PLAN_ENDE) return null;
+            return ['s' => $s, 'e' => ($e > $PLAN_ENDE ? $PLAN_ENDE : $e)];
+        };
+
+        $tage     = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
+        $slots    = [];   // key "s|e" => ['s'=>, 'e'=>]
         $belegung = [];   // [key][tag] = [labels]
 
-        // Alle Schulstunden vorab als Zeilen anlegen - der Plan zeigt damit
-        // immer das vollstaendige Zeitraster, freie Stunden bleiben leere
-        // Felder. Sonst haette ein Raum nur die Zeilen, in denen er auch
-        // belegt ist, und die Wochen saehen von Raum zu Raum verschieden aus.
-        foreach ($raster as $r) {
-            $slots[$r['s'] . '|' . $r['e']] = ['s' => $r['s'], 'e' => $r['e']];
-        }
+        $termine = $stmtT->fetchAll(PDO::FETCH_ASSOC);
 
         $eintragen = function ($s, $e, $tag, $label) use (&$slots, &$belegung) {
             $key = $s . '|' . $e;
@@ -3573,28 +3587,92 @@ if ($action === 'export_raumbelegungsplan') {
                 $belegung[$key][$tag][] = $label;
         };
 
-        foreach ($stmtT->fetchAll(PDO::FETCH_ASSOC) as $t) {
-            if (!in_array($t['tag'], $tage, true)) continue;
-            $label = $mkLabel($t['klasse'], $t['fach'], $t['aktivitaet']);
-            if ($label === '') continue;
-
-            $ts = $hhmm($t['start']);
-            $te = $hhmm($t['ende']);
-
-            // Der Termin erscheint in jeder Schulstunde, die er beruehrt.
-            $getroffen = 0;
-            foreach ($raster as $r) {
-                if ($ts < $r['e'] && $te > $r['s']) {
-                    $eintragen($r['s'], $r['e'], $t['tag'], $label);
-                    $getroffen++;
-                }
+        if ($standardRaster) {
+            // --- Variante MIT Standard-Zeitraster --------------------------
+            $stmtZ = $conn->prepare("SELECT DISTINCT z.startzeit, z.endzeit
+                                     FROM klassen_zeitraster z
+                                     JOIN klassen k ON k.id = z.klasse_id
+                                     WHERE k.schuljahr_id = ?
+                                     ORDER BY z.startzeit, z.endzeit");
+            $stmtZ->execute([$raum['schuljahr_id']]);
+            $raster = [];
+            foreach ($stmtZ->fetchAll(PDO::FETCH_ASSOC) as $z) {
+                $r = $begrenzen($hhmm($z['startzeit']), $hhmm($z['endzeit']));
+                if ($r) $raster[] = $r;
             }
 
-            // Faellt ein Termin in gar keine Schulstunde (z.B. ein Diensteinsatz
-            // vor Unterrichtsbeginn), bekommt er seine eigene Zeile - sonst waere
-            // die Belegung im Plan unsichtbar.
-            if ($getroffen === 0) $eintragen($ts, $te, $t['tag'], $label);
+            // Alle Schulstunden vorab als Zeilen anlegen - sonst haette ein
+            // Raum nur die Zeilen, in denen er belegt ist, und die Wochen
+            // saehen von Raum zu Raum verschieden aus.
+            foreach ($raster as $r) {
+                $slots[$r['s'] . '|' . $r['e']] = ['s' => $r['s'], 'e' => $r['e']];
+            }
+
+            foreach ($termine as $t) {
+                if (!in_array($t['tag'], $tage, true)) continue;
+                $label = $mkLabel($t['klasse'], $t['fach'], $t['aktivitaet']);
+                if ($label === '') continue;
+
+                $g = $begrenzen($hhmm($t['start']), $hhmm($t['ende']));
+                if (!$g) continue;   // liegt vollstaendig nach Planende
+
+                // Der Termin erscheint in jeder Schulstunde, die er beruehrt.
+                $getroffen = 0;
+                foreach ($raster as $r) {
+                    if ($g['s'] < $r['e'] && $g['e'] > $r['s']) {
+                        $eintragen($r['s'], $r['e'], $t['tag'], $label);
+                        $getroffen++;
+                    }
+                }
+
+                // Faellt ein Termin in gar keine Schulstunde (z.B. ein
+                // Diensteinsatz vor Unterrichtsbeginn), bekommt er seine
+                // eigene Zeile - sonst waere die Belegung unsichtbar.
+                if ($getroffen === 0) $eintragen($g['s'], $g['e'], $t['tag'], $label);
+            }
+        } else {
+            // --- Variante NUR tatsaechliche Termine ------------------------
+            foreach ($termine as $t) {
+                if (!in_array($t['tag'], $tage, true)) continue;
+                $label = $mkLabel($t['klasse'], $t['fach'], $t['aktivitaet']);
+                if ($label === '') continue;
+
+                $g = $begrenzen($hhmm($t['start']), $hhmm($t['ende']));
+                if (!$g) continue;
+
+                $eintragen($g['s'], $g['e'], $t['tag'], $label);
+            }
+
+            // Leerzeilen fuer die Zeit zwischen den Terminen sowie fuer die
+            // Raender. Die Zeitspalte aller fuenf Tage ist gemeinsam, deshalb
+            // wird die Woche als eine Zeitachse betrachtet: Eine Luecke
+            // entsteht dort, wo an KEINEM Tag ein Termin liegt.
+            //
+            // $grenze ist die Zeit, bis zu der die Achse lueckenlos abgedeckt
+            // ist. Sie waechst nur, wenn ein Termin weiter reicht - damit
+            // erzeugen sich ueberschneidende Termine verschiedener Tage keine
+            // falschen Luecken.
+            $belegt = array_values($slots);
+            usort($belegt, function ($a, $b) {
+                return $a['s'] === $b['s'] ? strcmp($a['e'], $b['e']) : strcmp($a['s'], $b['s']);
+            });
+
+            $luecken = [];
+            $grenze  = $PLAN_START;
+            foreach ($belegt as $sl) {
+                if ($sl['s'] > $grenze) $luecken[] = ['s' => $grenze, 'e' => $sl['s']];
+                if ($sl['e'] > $grenze) $grenze = $sl['e'];
+            }
+            // Rand am Ende - und bei einem voellig leeren Raum die einzige
+            // Zeile, die den ganzen Plantag abdeckt.
+            if ($grenze < $PLAN_ENDE) $luecken[] = ['s' => $grenze, 'e' => $PLAN_ENDE];
+
+            foreach ($luecken as $l) {
+                // Ohne Eintrag in $belegung bleibt die Zeile an allen Tagen leer.
+                $slots[$l['s'] . '|' . $l['e']] = $l;
+            }
         }
+
         // Slots nach Startzeit sortieren
         uasort($slots, function ($a, $b) {
             return $a['s'] === $b['s'] ? strcmp($a['e'], $b['e']) : strcmp($a['s'], $b['s']);
@@ -3620,8 +3698,11 @@ if ($action === 'export_raumbelegungsplan') {
             $pr .= '<w:vAlign w:val="' . $valign . '"/>';
             return '<w:tc><w:tcPr>' . $pr . '</w:tcPr>' . ($inner !== '' ? $inner : '<w:p/>') . '</w:tc>';
         };
-        $trow = function ($cells, $h = null) {
-            $pr = $h ? '<w:trPr><w:trHeight w:val="' . $h . '"/></w:trPr>' : '';
+        // $exakt = true -> feste Zeilenhoehe (hRule "exact"). Ohne hRule ist
+        // $h nur eine Mindesthoehe und die Zeile waechst mit ihrem Inhalt.
+        $trow = function ($cells, $h = null, $exakt = false) {
+            $rule = $exakt ? ' w:hRule="exact"' : '';
+            $pr = $h ? '<w:trPr><w:trHeight w:val="' . $h . '"' . $rule . '/></w:trPr>' : '';
             return '<w:tr>' . $pr . implode('', $cells) . '</w:tr>';
         };
         $tbl = function ($grid, $rows) {
@@ -3651,11 +3732,15 @@ if ($action === 'export_raumbelegungsplan') {
         foreach ($tage as $tagName) $head[] = $tcell($para($tagName, true, $TXT, 'center'), $DW, 'D9D9D9');
         $rows = [$trow($head, 420)];
 
+        // Feste Hoehe jeder Slot-Zeile: 1,65 cm. Word rechnet in Twips
+        // (1/1440 Zoll): 1,65 / 2,54 * 1440 = 935.
+        $ZEILENHOEHE = 935;
+
         if (empty($slots)) {
             $rows[] = $trow(array_merge(
                 [$tcell($para('', false, $TXT), $SW)],
                 array_map(function () use ($tcell, $para, $DW) { return $tcell('', $DW); }, $tage)
-            ), 560);
+            ), $ZEILENHOEHE, true);
         } else {
             foreach ($slots as $key => $sl) {
                 $cells = [$tcell($para($zeitLabel($sl['s'], $sl['e']), false, $TXT, 'center'), $SW)];
@@ -3665,10 +3750,7 @@ if ($action === 'export_raumbelegungsplan') {
                     foreach ($labels as $lab) $inner .= $para($lab, true, $TXT, 'center');
                     $cells[] = $tcell($inner, $DW);
                 }
-                // Grundhoehe knapp halten: seit der Plan immer alle Schulstunden
-                // zeigt, sind mehr Zeilen im Blatt. Belegte Zeilen wachsen ohnehin
-                // mit ihrem Inhalt (trHeight ohne hRule = Mindesthoehe).
-                $rows[] = $trow($cells, 400);
+                $rows[] = $trow($cells, $ZEILENHOEHE, true);
             }
         }
         $table = $tbl($grid, $rows);

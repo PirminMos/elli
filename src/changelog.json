@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "ec2aa29",
+      "hash": "5c99754",
+      "date": "2026-09-06",
+      "subject": "Feature: Raumbelegungsplan ohne Standard-Zeitraster exportierbar"
+    },
+    {
+      "hash": "cc52175",
       "date": "2026-09-06",
       "subject": "Fix: Sicherungsordner bleibt auch nach einem Update eingebunden"
     },
