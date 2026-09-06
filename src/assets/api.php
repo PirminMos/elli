@@ -263,7 +263,11 @@ function elli_ensure_schule_columns(PDO $conn) {
         ADD COLUMN IF NOT EXISTS nachname VARCHAR(255) DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS genehmiger VARCHAR(255) DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS schuljahr_beginn DATE DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS schuljahr_ende DATE DEFAULT NULL");
+        ADD COLUMN IF NOT EXISTS schuljahr_ende DATE DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS genehmiger_schulleitung VARCHAR(255) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS genehmiger_tagesstaette VARCHAR(255) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS mitersteller_lehrerplan VARCHAR(255) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS mitersteller_dienstplan VARCHAR(255) DEFAULT NULL");
 }
 
 // Selbstheilung: Spalte fuer "Ermaessigung relevant?" je Einsatzort-Zeile einer
@@ -570,6 +574,8 @@ if ($action === 'get_schuljahre') {
     try {
         elli_ensure_schule_columns($conn);
         $stmt = $conn->query("SELECT id, schuljahr, adresse, titel, nachname, genehmiger,
+                                     genehmiger_schulleitung, genehmiger_tagesstaette,
+                                     mitersteller_lehrerplan, mitersteller_dienstplan,
                                      DATE_FORMAT(schuljahr_beginn, '%Y-%m-%d') AS schuljahr_beginn,
                                      DATE_FORMAT(schuljahr_ende, '%Y-%m-%d') AS schuljahr_ende
                               FROM schule ORDER BY id DESC");
@@ -578,6 +584,11 @@ if ($action === 'get_schuljahre') {
             $r['titel']            = $r['titel'] ?? '';
             $r['nachname']         = $r['nachname'] ?? '';
             $r['genehmiger']       = $r['genehmiger'] ?? '';
+            // Rubrik "Genehmiger und Mitersteller" aus dem Burgermenue
+            $r['genehmiger_schulleitung'] = $r['genehmiger_schulleitung'] ?? '';
+            $r['genehmiger_tagesstaette'] = $r['genehmiger_tagesstaette'] ?? '';
+            $r['mitersteller_lehrerplan'] = $r['mitersteller_lehrerplan'] ?? '';
+            $r['mitersteller_dienstplan'] = $r['mitersteller_dienstplan'] ?? '';
             $r['schuljahr_beginn'] = $r['schuljahr_beginn'] ?? '';
             $r['schuljahr_ende']   = $r['schuljahr_ende'] ?? '';
         }
@@ -599,10 +610,16 @@ if ($action === 'save_schuljahr_meta') {
     try {
         elli_ensure_schule_columns($conn);
         $stmt = $conn->prepare("UPDATE schule SET titel = ?, nachname = ?, genehmiger = ?,
-                                       schuljahr_beginn = ?, schuljahr_ende = ? WHERE id = ?");
+                                       schuljahr_beginn = ?, schuljahr_ende = ?,
+                                       genehmiger_schulleitung = ?, genehmiger_tagesstaette = ?,
+                                       mitersteller_lehrerplan = ?, mitersteller_dienstplan = ?
+                                WHERE id = ?");
         $stmt->execute([
             $data['titel'] ?? '', $data['nachname'] ?? '', $data['genehmiger'] ?? '',
-            $beginn, $ende, $sid
+            $beginn, $ende,
+            $data['genehmiger_schulleitung'] ?? '', $data['genehmiger_tagesstaette'] ?? '',
+            $data['mitersteller_lehrerplan'] ?? '', $data['mitersteller_dienstplan'] ?? '',
+            $sid
         ]);
         echo json_encode(['success' => true]);
     } catch (PDOException $e) {

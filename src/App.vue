@@ -76,6 +76,28 @@
           </div>
         </div>
 
+        <div class="menu-item settings-section">
+          <h3>Genehmiger und Mitersteller</h3>
+          <div class="settings-grid">
+            <div class="input-group">
+              <label>Genehmiger Schulleitung</label>
+              <input v-model="genehmigerSchulleitung" type="text" class="glass-input">
+            </div>
+            <div class="input-group">
+              <label>Genehmiger Tagesstättenleitung</label>
+              <input v-model="genehmigerTagesstaette" type="text" class="glass-input">
+            </div>
+            <div class="input-group">
+              <label>Mitersteller Lehrerstundenplan</label>
+              <input v-model="miterstellerLehrerplan" type="text" class="glass-input">
+            </div>
+            <div class="input-group">
+              <label>Mitersteller Diensteinsatzplan</label>
+              <input v-model="miterstellerDienstplan" type="text" class="glass-input">
+            </div>
+          </div>
+        </div>
+
         <div class="input-group">
           <label>Adresse:</label>
           <textarea v-model="schule.adresse.name" placeholder="Name der Schule"></textarea>
@@ -5604,6 +5626,11 @@ export default {
       nachname: '',
       titel: '',
       genehmiger: '',
+      // Rubrik "Genehmiger und Mitersteller" - haengt wie Titel/Nachname am Schuljahr
+      genehmigerSchulleitung: '',
+      genehmigerTagesstaette: '',
+      miterstellerLehrerplan: '',
+      miterstellerDienstplan: '',
       schuljahrBeginn: '',
       schuljahrEnde: '',
       isHardwareBack: false,
@@ -9736,6 +9763,10 @@ export default {
       this.titel           = sj ? (sj.titel || '') : '';
       this.nachname        = sj ? (sj.nachname || '') : '';
       this.genehmiger      = sj ? (sj.genehmiger || '') : '';
+      this.genehmigerSchulleitung = sj ? (sj.genehmiger_schulleitung || '') : '';
+      this.genehmigerTagesstaette = sj ? (sj.genehmiger_tagesstaette || '') : '';
+      this.miterstellerLehrerplan = sj ? (sj.mitersteller_lehrerplan || '') : '';
+      this.miterstellerDienstplan = sj ? (sj.mitersteller_dienstplan || '') : '';
       this.schuljahrBeginn = sj ? (sj.schuljahr_beginn || '') : '';
       this.schuljahrEnde   = sj ? (sj.schuljahr_ende || '') : '';
     },
@@ -9759,7 +9790,11 @@ export default {
             nachname: this.nachname,
             genehmiger: this.genehmiger,
             schuljahr_beginn: this.schuljahrBeginn,
-            schuljahr_ende: this.schuljahrEnde
+            schuljahr_ende: this.schuljahrEnde,
+            genehmiger_schulleitung: this.genehmigerSchulleitung,
+            genehmiger_tagesstaette: this.genehmigerTagesstaette,
+            mitersteller_lehrerplan: this.miterstellerLehrerplan,
+            mitersteller_dienstplan: this.miterstellerDienstplan
           })
         });
         p3 = fetch(`${API_URL}?action=save_address`, {

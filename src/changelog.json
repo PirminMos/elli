@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "c50e38b",
+      "hash": "1c4f15d",
+      "date": "2026-09-06",
+      "subject": "Feature: Rubrik \"Genehmiger und Mitersteller\" im Burgermenue"
+    },
+    {
+      "hash": "80eb90f",
       "date": "2026-09-06",
       "subject": "Feature: Diensteinsatzplan bekommt zwei Unterschriftszeilen"
     },
