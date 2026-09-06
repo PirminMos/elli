@@ -3025,6 +3025,14 @@ if ($action === 'export_raumbelegungsplan') {
         $slots = [];      // key "s|e" => ['s'=>, 'e'=>]
         $belegung = [];   // [key][tag] = [labels]
 
+        // Alle Schulstunden vorab als Zeilen anlegen - der Plan zeigt damit
+        // immer das vollstaendige Zeitraster, freie Stunden bleiben leere
+        // Felder. Sonst haette ein Raum nur die Zeilen, in denen er auch
+        // belegt ist, und die Wochen saehen von Raum zu Raum verschieden aus.
+        foreach ($raster as $r) {
+            $slots[$r['s'] . '|' . $r['e']] = ['s' => $r['s'], 'e' => $r['e']];
+        }
+
         $eintragen = function ($s, $e, $tag, $label) use (&$slots, &$belegung) {
             $key = $s . '|' . $e;
             $slots[$key] = ['s' => $s, 'e' => $e];
@@ -3099,27 +3107,35 @@ if ($action === 'export_raumbelegungsplan') {
         $kopf .= $para('für das Schuljahr ' . $raum['schuljahr'] . '          ' . $raum['name'], true, 30, 'center', 160);
 
         // --- Wochentabelle (Stunde + Mo–Fr) ---
+        // Schriftgroesse 20 (10pt) statt 24: seit der Plan immer alle
+        // Schulstunden zeigt, braucht das Blatt mehr Zeilen. Bei 12pt brachen
+        // laengere Bezeichnungen wie "ABC Zaubergeschichte" ausserdem in der
+        // Tagesspalte um und trieben belegte Stunden auf die doppelte Hoehe.
+        $TXT = 20;
         $SW = 2286; $DW = 2400; // Stunde + 5 Tage = 2286 + 12000 = 14286
         $grid = [$SW, $DW, $DW, $DW, $DW, $DW];
-        $head = [$tcell($para('Stunde', true, 24, 'center'), $SW, 'D9D9D9')];
-        foreach ($tage as $tagName) $head[] = $tcell($para($tagName, true, 24, 'center'), $DW, 'D9D9D9');
+        $head = [$tcell($para('Stunde', true, $TXT, 'center'), $SW, 'D9D9D9')];
+        foreach ($tage as $tagName) $head[] = $tcell($para($tagName, true, $TXT, 'center'), $DW, 'D9D9D9');
         $rows = [$trow($head, 420)];
 
         if (empty($slots)) {
             $rows[] = $trow(array_merge(
-                [$tcell($para('', false, 24), $SW)],
+                [$tcell($para('', false, $TXT), $SW)],
                 array_map(function () use ($tcell, $para, $DW) { return $tcell('', $DW); }, $tage)
             ), 560);
         } else {
             foreach ($slots as $key => $sl) {
-                $cells = [$tcell($para($zeitLabel($sl['s'], $sl['e']), false, 24, 'center'), $SW)];
+                $cells = [$tcell($para($zeitLabel($sl['s'], $sl['e']), false, $TXT, 'center'), $SW)];
                 foreach ($tage as $tag) {
                     $labels = $belegung[$key][$tag] ?? [];
                     $inner = '';
-                    foreach ($labels as $lab) $inner .= $para($lab, true, 24, 'center');
+                    foreach ($labels as $lab) $inner .= $para($lab, true, $TXT, 'center');
                     $cells[] = $tcell($inner, $DW);
                 }
-                $rows[] = $trow($cells, 560);
+                // Grundhoehe knapp halten: seit der Plan immer alle Schulstunden
+                // zeigt, sind mehr Zeilen im Blatt. Belegte Zeilen wachsen ohnehin
+                // mit ihrem Inhalt (trHeight ohne hRule = Mindesthoehe).
+                $rows[] = $trow($cells, 400);
             }
         }
         $table = $tbl($grid, $rows);

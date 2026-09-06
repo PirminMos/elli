@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "78ca651",
+      "hash": "0178239",
+      "date": "2026-09-06",
+      "subject": "Feature: Raumbelegungsplan zeigt immer alle Schulstunden"
+    },
+    {
+      "hash": "9196bbc",
       "date": "2026-09-06",
       "subject": "Feature: Unterschriftszeilen sitzen am Seitenende"
     },
