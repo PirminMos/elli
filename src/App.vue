@@ -1453,7 +1453,7 @@
                       </transition>
                     </div>
                     <div class="time-inputs">
-                      <input type="time" v-model="v.startzeit">
+                      <input type="time" v-model="v.startzeit" @change="verfuegbarkeitStartGeaendert(v)">
                       <span>bis</span>
                       <input type="time" v-model="v.endzeit">
                       <button class="remove-btn" @click="editingRaum.verfuegbarkeiten.splice(vIndex, 1)">×</button>
@@ -1956,7 +1956,7 @@
                 <div class="time-input-block">
                   <label>Beginn:</label>
                   <input type="time" v-model="lehrerPlanForm.start" class="glass-input-time"
-                         @change="updateTimeFromUnits">
+                         @change="startzeitGeaendert">
                 </div>
               </div>
               <div class="input-group">
@@ -2110,7 +2110,7 @@
                 <div class="time-input-block">
                   <label>Beginn:</label>
                   <input type="time" v-model="lehrerPlanForm.start" class="glass-input-time"
-                         @change="updateTimeFromUnits">
+                         @change="startzeitGeaendert">
                 </div>
               </div>
               <div class="input-group">
@@ -7102,6 +7102,36 @@ export default {
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
       return m ? `${m[3]}.${m[2]}.${m[1]}` : (iso || '');
     },
+    // Rechnet eine Uhrzeit "HH:MM" um n Minuten weiter. Ueber Mitternacht wird
+    // umgebrochen, damit immer eine gueltige Zeit herauskommt (23:30 -> 00:15).
+    zeitPlusMinuten(hhmm, minuten = 45) {
+      const [h, m] = String(hhmm || '').split(':').map(Number);
+      if (!Number.isFinite(h) || !Number.isFinite(m)) return '';
+      const gesamt = ((h * 60 + m + minuten) % 1440 + 1440) % 1440;
+      return String(Math.floor(gesamt / 60)).padStart(2, '0') + ':' +
+          String(gesamt % 60).padStart(2, '0');
+    },
+
+    // Eine neu eingegebene Startzeit zieht das Ende mit: eine Schulstunde
+    // (45 Minuten) spaeter. Wo das UE-Raster gilt - Faecher, und Aktivitaeten
+    // im Lehrerstundenplan - rechnet updateTimeFromUnits das Ende aus den
+    // Schulstunden der Klasse; dort bleibt es bei dieser genaueren Rechnung,
+    // weil eine Pause im Block das Ende weiter nach hinten schiebt.
+    startzeitGeaendert() {
+      if (this.sliderGilt) {
+        this.updateTimeFromUnits();
+        return;
+      }
+      const ende = this.zeitPlusMinuten(this.lehrerPlanForm.start, 45);
+      if (ende) this.lehrerPlanForm.ende = ende;
+    },
+
+    // Dasselbe fuer eine Zeile der Raum-Verfuegbarkeiten (Oeffnungszeiten).
+    verfuegbarkeitStartGeaendert(v) {
+      const ende = this.zeitPlusMinuten(v && v.startzeit, 45);
+      if (ende) v.endzeit = ende;
+    },
+
     updateTimeFromUnits(input = null) {
       // Nur rechnen, wenn es ein Fach (Typ 'f') ist und wir eine Startzeit haben.
       // Bei Aktivitäten gibt der Nutzer das Ende selbst ein, da wird nichts überschrieben.
