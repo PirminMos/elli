@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "0178239",
+      "hash": "bfb11ba",
+      "date": "2026-09-06",
+      "subject": "Feature: Burgermenue umgebaut - Rubrik Schule, drei Spalten"
+    },
+    {
+      "hash": "6832deb",
       "date": "2026-09-06",
       "subject": "Feature: Raumbelegungsplan zeigt immer alle Schulstunden"
     },

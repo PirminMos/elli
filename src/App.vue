@@ -62,10 +62,6 @@
             <input v-model="titel" type="text" class="glass-input">
           </div>
           <div class="input-group">
-            <label>Genehmiger</label>
-            <input v-model="genehmiger" type="text" class="glass-input">
-          </div>
-          <div class="input-group">
             <label>Schuljahresbeginn</label>
             <input v-model="schuljahrBeginn" type="date" class="glass-input">
           </div>
@@ -98,11 +94,26 @@
           </div>
         </div>
 
-        <div class="input-group">
-          <label>Adresse:</label>
-          <textarea v-model="schule.adresse.name" placeholder="Name der Schule"></textarea>
-          <textarea v-model="schule.adresse.strasse" placeholder="Straße"></textarea>
-          <textarea v-model="schule.adresse.stadt" placeholder="Postleitzahl & Ort"></textarea>
+        <div class="menu-item settings-section">
+          <h3>Schule</h3>
+          <div class="settings-grid">
+            <div class="input-group">
+              <label>Name der Schule</label>
+              <input v-model="schulname" type="text" class="glass-input">
+            </div>
+            <div class="input-group">
+              <label>Namenszusatz</label>
+              <input v-model="schulnameZusatz" type="text" class="glass-input">
+            </div>
+            <div class="input-group">
+              <label>Straße</label>
+              <input v-model="schule.adresse.strasse" type="text" class="glass-input">
+            </div>
+            <div class="input-group">
+              <label>Postleitzahl & Ort</label>
+              <input v-model="schule.adresse.stadt" type="text" class="glass-input">
+            </div>
+          </div>
         </div>
       </div>
     </transition>
@@ -2602,8 +2613,9 @@ select:focus {
   position: fixed;
   top: 0;
   left: 0;
-  width: 560px; /* Breiter für die zweispaltige Feld-Anordnung */
-  max-width: 92vw;
+  width: 50vw; /* halbe Bildschirmbreite - Platz für drei Felder nebeneinander */
+  min-width: 560px;
+  max-width: 96vw;
   height: 100vh;
   padding: 120px 40px 40px 60px; /* Oben Platz lassen für den Header */
   box-sizing: border-box;
@@ -2613,10 +2625,10 @@ select:focus {
   backdrop-filter: blur(20px);
 }
 
-/* Zwei Eingabefelder nebeneinander */
+/* Drei Eingabefelder nebeneinander */
 .settings-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   column-gap: 20px;
 }
 
@@ -6160,6 +6172,28 @@ export default {
       console.log("counts", counts);
       // WICHTIG: In ein Array umwandeln für v-for
       return Object.values(counts).sort((a, b) => a.name.localeCompare(b.name));
+    },
+    // Die Adresse speichert den Schulnamen als mehrzeiligen Text: erste Zeile
+    // ist der Name, der Rest der Zusatz. Der Export wertet das so aus. Statt
+    // eines Textfeldes bieten wir zwei Eingabefelder darauf an.
+    schulname: {
+      get() {
+        return String(this.schule.adresse.name || '').split('\n')[0] || '';
+      },
+      set(wert) {
+        const rest = String(this.schule.adresse.name || '').split('\n').slice(1).join('\n').trim();
+        this.schule.adresse.name = rest ? wert + '\n' + rest : wert;
+      }
+    },
+    schulnameZusatz: {
+      get() {
+        return String(this.schule.adresse.name || '').split('\n').slice(1).join(' ').trim();
+      },
+      set(wert) {
+        const erste = String(this.schule.adresse.name || '').split('\n')[0] || '';
+        const zusatz = String(wert || '').trim();
+        this.schule.adresse.name = zusatz ? erste + '\n' + zusatz : erste;
+      }
     },
     getSelectedKlassenName() {
       // Falls keine ID gewählt wurde, brich sofort ab

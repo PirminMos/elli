@@ -2337,7 +2337,8 @@ if ($action === 'export_lehrerstundenplan') {
 
         // 1. Schule (inkl. Nachname/Titel/Genehmiger aus den Einstellungen im Burgermenue)
         elli_ensure_schule_columns($conn);
-        $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger
+        $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger,
+                                        genehmiger_schulleitung
                                  FROM schule WHERE id = ?");
         $stmtS->execute([$schuljahr_id]);
         $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
@@ -2446,7 +2447,11 @@ if ($action === 'export_lehrerstundenplan') {
             $stmtU->execute();
             $ersteller = $stmtU->fetchColumn() ?: '';
         }
-        $genehmiger = trim((string)($schule['genehmiger'] ?? ''));
+        // Das alte Sammelfeld "Genehmiger" gibt es im Burgermenue nicht mehr;
+        // an seine Stelle ist "Genehmiger Schulleitung" getreten. Der alte Wert
+        // dient nur noch als Rueckfall fuer Schuljahre, die vor der Umstellung
+        // gepflegt wurden.
+        $genehmiger = trim((string)($schule['genehmiger_schulleitung'] ?? '')) ?: trim((string)($schule['genehmiger'] ?? ''));
 
         // 6. Template befüllen
         $tplPath = __DIR__ . '/lehrerstundenplan_template.docx';
@@ -2565,7 +2570,7 @@ if ($action === 'export_schuelerstundenplan') {
 
         elli_ensure_schule_columns($conn);
         $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger,
-                                         schuljahr_beginn, schuljahr_ende
+                                         genehmiger_schulleitung, schuljahr_beginn, schuljahr_ende
                                  FROM schule WHERE id = ?");
         $stmtS->execute([$klasse['schuljahr_id']]);
         $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
@@ -2661,7 +2666,11 @@ if ($action === 'export_schuelerstundenplan') {
             $stmtU->execute();
             $ersteller = $stmtU->fetchColumn() ?: '';
         }
-        $genehmiger = trim((string)($schule['genehmiger'] ?? ''));
+        // Das alte Sammelfeld "Genehmiger" gibt es im Burgermenue nicht mehr;
+        // an seine Stelle ist "Genehmiger Schulleitung" getreten. Der alte Wert
+        // dient nur noch als Rueckfall fuer Schuljahre, die vor der Umstellung
+        // gepflegt wurden.
+        $genehmiger = trim((string)($schule['genehmiger_schulleitung'] ?? '')) ?: trim((string)($schule['genehmiger'] ?? ''));
 
         // 6. Dokument-Body als WordML aufbauen (dynamisch, damit Zellen bei
         //    äußerer Differenzierung in zwei Zellen geteilt werden können).
@@ -3955,7 +3964,8 @@ if ($action === 'get_raum_verfuegbarkeit') {
           //    Nachname/Titel/Genehmiger aus den Einstellungen im Burgermenue
           elli_ensure_schule_columns($conn);
           $stmtS = $conn->prepare("SELECT schuljahr, adresse, titel, nachname, genehmiger,
-                                          genehmiger_tagesstaette, mitersteller_dienstplan
+                                          genehmiger_schulleitung, genehmiger_tagesstaette,
+                                          mitersteller_dienstplan
                                    FROM schule WHERE id = ?");
           $stmtS->execute([$schuljahr_id]);
           $schule = $stmtS->fetch(PDO::FETCH_ASSOC)
@@ -4069,7 +4079,11 @@ if ($action === 'get_raum_verfuegbarkeit') {
               $tpl->setValue('mitersteller', '');
           }
           $tpl->setValue('ersteller', $esc($ersteller));
-          $tpl->setValue('genehmiger', $esc($einzeilig($schule['genehmiger'] ?? '')));
+          // "Genehmiger Schulleitung" aus dem Burgermenue; der alte Sammelwert
+          // bleibt Rueckfall fuer Schuljahre von vor der Umstellung.
+          $genehmigerName = $einzeilig($schule['genehmiger_schulleitung'] ?? '')
+              ?: $einzeilig($schule['genehmiger'] ?? '');
+          $tpl->setValue('genehmiger', $esc($genehmigerName));
           // Name hinter "durch Tagesstaettenleitung" - ebenfalls aus dem Burgermenue
           $tpl->setValue('tagesstaettenleitung', $esc($einzeilig($schule['genehmiger_tagesstaette'] ?? '')));
 
