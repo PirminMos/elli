@@ -46,7 +46,12 @@ $action = $_GET['action'] ?? '';
  *   'raum_ids'             array von Raum-IDs
  *   'kraefte'              array von ['id'=>int,'typ'=>'erst'|'zweit']
  *   'klassen_id'           int|null  -> Belegungs- + Rasterprüfung
+ *   'is_differenzierung'   bool      -> aeussere Differenzierung: die Klasse darf
+ *                                      parallel einen zweiten Termin haben, die
+ *                                      Belegungspruefung entfaellt (Raster gilt weiter)
  *   'exclude_termin_ids'   Termin-IDs, die ignoriert werden (werden ersetzt/gelöscht)
+ *                          Die ID des gerade bearbeiteten Termins gehoert immer
+ *                          hierhin - sonst kollidiert ein Termin mit sich selbst.
  *
  * @return string[] Konfliktmeldungen (leer = alles frei)
  */
@@ -136,16 +141,22 @@ function elli_finde_konflikte(PDO $conn, array $opts) {
         $stmtKN->execute([$klassenId]);
         $klassenName = $stmtKN->fetchColumn() ?: ('#' . $klassenId);
 
-        $sql = "SELECT COALESCE(sf.name, a.name, 'Termin') AS bez, t.start, t.ende
-                FROM termin t
-                LEFT JOIN schulfach sf ON sf.id = t.schulfach_id
-                LEFT JOIN aktivitaet a ON a.id = t.aktivitaet_id
-                WHERE t.klassen_id = ? AND t.tag = ? AND t.start < ? AND t.ende > ?" . $exSql . " LIMIT 1";
-        $stmt = $conn->prepare($sql);
-        $stmt->execute(array_merge([$klassenId, $tag, $ende, $start], $excludes));
-        if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $konflikte[] = "🏫 Klasse $klassenName ist bereits belegt: \"{$row['bez']}\" ($tag " .
-                substr($row['start'],0,5) . "–" . substr($row['ende'],0,5) . ")";
+        // Aeussere Differenzierung: die Klasse wird bewusst geteilt und hat
+        // deshalb zwei parallele Termine. Ist der zu speichernde Termin so
+        // markiert, ist die Doppelbelegung gewollt und darf das Speichern nicht
+        // blockieren. Das Zeitraster der Klasse gilt weiterhin.
+        if (empty($opts['is_differenzierung'])) {
+            $sql = "SELECT COALESCE(sf.name, a.name, 'Termin') AS bez, t.start, t.ende
+                    FROM termin t
+                    LEFT JOIN schulfach sf ON sf.id = t.schulfach_id
+                    LEFT JOIN aktivitaet a ON a.id = t.aktivitaet_id
+                    WHERE t.klassen_id = ? AND t.tag = ? AND t.start < ? AND t.ende > ?" . $exSql . " LIMIT 1";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute(array_merge([$klassenId, $tag, $ende, $start], $excludes));
+            if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $konflikte[] = "🏫 Klasse $klassenName ist bereits belegt: \"{$row['bez']}\" ($tag " .
+                    substr($row['start'],0,5) . "–" . substr($row['ende'],0,5) . ")";
+            }
         }
 
         // Zeitraster: der Termin muss von den (überlappenden) Rasterstunden der Klasse
@@ -2996,7 +3007,10 @@ if ($action === 'get_lehrerstundenplan') {
                             'schulfach_farbe' => $row['schulfach_farbe'],
                             'schulfach_benoetigte_raeume' => $row['schulfach_benoetigte_raeume'],
                             'stunden_id'      => $row['stunden_id'],
-                            'is_differenzierung' => $row['is_differenzierung'],
+                            // Als echten Boolean liefern: PDO gibt "0"/"1" zurueck und
+                            // der String "0" ist in JS truthy - die Checkbox im Modal
+                            // stuende sonst bei jedem Termin auf "Differenzierung".
+                            'is_differenzierung' => (int)$row['is_differenzierung'] === 1,
                             'aktivitaet'      => $row['aktivitaet_name'],
                             'aktivitaet_id'   => $row['aktivitaet_id'],
                             'raeume'          => [],
@@ -3337,6 +3351,7 @@ if ($action === 'get_raum_verfuegbarkeit') {
                     'raum_ids' => $t['raum_ids'] ?? [],
                     'kraefte' => [['id' => $lehrerId, 'typ' => 'erst']],
                     'klassen_id' => $t['klassen_id'] ?? null,
+                    'is_differenzierung' => !empty($t['is_differenzierung']),
                     'exclude_termin_ids' => $excludeIds,
                 ]));
             }
@@ -3520,6 +3535,7 @@ if ($action === 'get_raum_verfuegbarkeit') {
                   'raum_ids' => $t['raum_ids'] ?? [],
                   'kraefte' => [['id' => $zweitkraft_id, 'typ' => 'zweit']],
                   'klassen_id' => $t['klassen_id'] ?? null,
+                  'is_differenzierung' => !empty($t['is_differenzierung']),
                   'exclude_termin_ids' => $excludeIds,
               ]));
           }

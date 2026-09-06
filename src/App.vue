@@ -7695,7 +7695,8 @@ export default {
         schulfach_farbe: farbe,
         schulfach_benoetigte_raeume: benoetigte_raeume,
         stunden_id: fullData.stunden_id || null,
-        is_differenzierung: fullData.is_differenzierung || null,
+        is_differenzierung: fullData.is_differenzierung === true
+            || Number(fullData.is_differenzierung) === 1,
         aktivitaet: fullData.aktivitaet || null,
         aktivitaet_id: fullData.aktivitaet_id || null,
         klassen_id: fullData.klassen_id || null,
@@ -7741,6 +7742,12 @@ export default {
     editLehrerAssignment(termin) {
       // 1. Tiefe Kopie des Objekts erstellen, um die Originaldaten im Plan nicht sofort zu manipulieren
       this.lehrerPlanForm = {...termin};
+
+      // Aeussere Differenzierung als echten Boolean fuehren (Alt-Daten liefern
+      // teils "0"/"1" als String - "0" waere in JS truthy und die Checkbox waere
+      // faelschlich gesetzt).
+      this.lehrerPlanForm.is_differenzierung =
+          termin.is_differenzierung === true || Number(termin.is_differenzierung) === 1;
 
       // 2. Zeitformate bereinigen (Wichtig, falls aus der DB "08:00:00" kommt, brauchen wir "08:00")
       if (this.lehrerPlanForm.start) this.lehrerPlanForm.start = this.lehrerPlanForm.start.slice(0, 5);
@@ -7821,7 +7828,8 @@ export default {
             tagNeu,
             startNeu,
             endeNeu,
-            excludeId
+            excludeId,
+            !!this.lehrerPlanForm.is_differenzierung
         );
         if (!klasseCheck) return; // Bricht ab, falls Klasse nicht verfügbar oder außerhalb Raster
       }
@@ -7836,9 +7844,9 @@ export default {
 
       if (kraftDaten && kraftDaten.termine) {
         const doppelung = kraftDaten.termine.find(t => {
-          // 1. Nicht mit sich selbst vergleichen (wichtig beim Bearbeiten)
-          // PHP liefert 'termin_id'
-          if (excludeId && t.termin_id === excludeId) return false;
+          // 1. Nicht mit sich selbst vergleichen (wichtig beim Bearbeiten).
+          // PHP liefert 'termin_id' als String, das Formular ggf. als Zahl.
+          if (excludeId && String(t.termin_id) === String(excludeId)) return false;
 
           // 2. Nur Termine am gleichen Tag prüfen
           if (t.tag !== tagNeu) return false;
@@ -7887,14 +7895,15 @@ export default {
             }
           : { erstkraft_id: this.activeLehrerId };
 
-      let neuerTermin = {
-        ...this.lehrerPlanForm,
-        ...kraftFelder,
-        tag: tagNeu,
-        start: startNeu.length === 5 ? startNeu + ":00" : startNeu,
-        ende: endeNeu.length === 5 ? endeNeu + ":00" : endeNeu,
-        termin_id: crypto.randomUUID()
-      };
+      // Beim Bearbeiten behaelt der Termin seine urspruengliche ID. Sonst wuerde
+      // der bestehende DB-Eintrag geloescht und neu angelegt - die Konflikt-
+      // pruefung (hier wie im Backend) erkennt ihn danach nicht mehr als
+      // "derselbe Termin" und meldet die Klasse faelschlich als belegt.
+      const istBearbeitung = !!excludeId &&
+          (this.lehrerPlanForm.dragMode === 'edit' || this.lehrerPlanForm.dragMode === 'move');
+      let idsZumWiederverwenden = istBearbeitung ? [excludeId] : [];
+      const naechsteTerminId = () =>
+          idsZumWiederverwenden.length ? idsZumWiederverwenden.shift() : crypto.randomUUID();
 
       // 2. Neues Objekt bauen. Ein Eintrag mit UE-Raster zerfällt in einzelne
       // 45-Minuten-Termine (wie im Export je Schulstunde ausgewiesen), ein
@@ -7902,7 +7911,14 @@ export default {
       const alsEinzelblock = this.lehrerPlanForm.aktivitaet
           && this.activeCategory !== 'lehrerstundenplan';
       if (alsEinzelblock) {
-        targetPlan.termine.push(neuerTermin);
+        targetPlan.termine.push({
+          ...this.lehrerPlanForm,
+          ...kraftFelder,
+          tag: tagNeu,
+          start: startNeu.length === 5 ? startNeu + ":00" : startNeu,
+          ende: endeNeu.length === 5 ? endeNeu + ":00" : endeNeu,
+          termin_id: naechsteTerminId()
+        });
       } else {
         // Die Einheiten folgen den Schulstunden der Klasse; Pausen bleiben frei.
         const bloecke = this.planEinheiten(this.lehrerPlanForm.klassen_id, startNeu, this.stundenAuswahl);
@@ -7914,7 +7930,8 @@ export default {
             tag: tagNeu,
             start: b.start.length === 5 ? b.start + ":00" : b.start,
             ende: b.ende.length === 5 ? b.ende + ":00" : b.ende,
-            termin_id: crypto.randomUUID()
+            // Der erste Block erbt die bestehende ID, weitere Bloecke sind neu.
+            termin_id: naechsteTerminId()
           });
         });
 
@@ -7997,6 +8014,10 @@ export default {
           // Ohne das legt ein zweites Speichern die eben angelegten Zeilen erneut an.
           // Der Ladevorgang merkt sich auch den neuen Stand (merkePlanStand).
           await this.loadLehrerstundenplan(this.activeLehrerId || this.currentLehrerstundenplan.erstkraft_id);
+          // Auch die Klassensicht nachziehen: sie liefert die Termin-IDs fuer die
+          // Belegungspruefung. Bleibt sie auf dem alten Stand, kollidiert ein
+          // frisch gespeicherter Termin beim naechsten Bearbeiten mit sich selbst.
+          await this.loadKlassenVerfuegbarkeiten();
         } else {
           // Konflikte (Raum/Kraft/Klasse) vom Server sichtbar machen
           this.showStatus(result.error || "Speichern fehlgeschlagen", "error");
@@ -8026,6 +8047,8 @@ export default {
           this.showStatus("Der Diensteinsatzplan wurde erfolgreich gespeichert.");
           // Neu laden, damit neue Termine ihre echten DB-IDs erhalten (statt temp-UUIDs)
           await this.loadDiensteinsatzplan(this.activeZweitkraftId);
+          // Klassensicht (Termin-IDs fuer die Belegungspruefung) nachziehen
+          await this.loadKlassenVerfuegbarkeiten();
         } else {
           console.error('Fehler: ' + result.error);
           this.showStatus(result.error || "Speichern fehlgeschlagen", "error");
@@ -8391,8 +8414,13 @@ export default {
       }
       return true; // Alles okay!
     },
-    isKlasseVerfuegbar(klassenId, tag, start, ende, ignoreTerminId = null) {
-      const klasse = this.klassenVerfuegbarkeiten.find(k => k.id === klassenId);
+    // ignoreTerminIds: ID (oder Liste von IDs) des gerade bearbeiteten Termins.
+    // Beim Bearbeiten vergleicht sich ein Termin sonst mit sich selbst und die
+    // Klasse gilt faelschlich als belegt - Aendern von Raum/Fach waere unmoeglich.
+    // istDifferenzierung: bei aeusserer Differenzierung sind zwei parallele
+    // Termine einer Klasse gewollt, die Belegungspruefung entfaellt dann.
+    isKlasseVerfuegbar(klassenId, tag, start, ende, ignoreTerminIds = null, istDifferenzierung = false) {
+      const klasse = this.klassenVerfuegbarkeiten.find(k => String(k.id) === String(klassenId));
 
       if (!klasse) {
         console.error("Klasse nicht gefunden");
@@ -8426,8 +8454,16 @@ export default {
       }
 
       // --- CHECK 2: BELEGUNG (Kollision mit anderen Terminen) ---
+      // Bei aeusserer Differenzierung darf die Klasse parallel belegt sein.
+      if (istDifferenzierung) return true;
+
+      // IDs als Strings vergleichen: die DB liefert "42", das Formular ggf. 42.
+      const ignore = (Array.isArray(ignoreTerminIds) ? ignoreTerminIds : [ignoreTerminIds])
+          .filter(id => id !== null && id !== undefined && id !== '')
+          .map(id => String(id));
+
       const kollision = klasse.termine.find(t => {
-        if (ignoreTerminId && t.termin_id === ignoreTerminId) return false;
+        if (ignore.includes(String(t.termin_id))) return false;
         if (t.tag !== tag) return false;
 
         // Standard Überschneidungs-Check

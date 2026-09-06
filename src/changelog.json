@@ -1,8 +1,13 @@
 {
-  "generated": "2026-09-04",
+  "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "352d13a",
+      "hash": "a185e72",
+      "date": "2026-09-06",
+      "subject": "Fix: Termin bearbeiten scheitert an der eigenen Klassenbelegung"
+    },
+    {
+      "hash": "e9edad4",
       "date": "2026-09-04",
       "subject": "Fix: Schuljahrwechsel laedt Klassen und deren Zeitraster nach"
     },
