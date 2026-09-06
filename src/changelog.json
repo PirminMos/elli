@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "5c99754",
+      "hash": "5e7c7e5",
+      "date": "2026-09-06",
+      "subject": "Feature: Raumbelegungsplan - Kopf und Zeitspalte lesbarer"
+    },
+    {
+      "hash": "5c60ac5",
       "date": "2026-09-06",
       "subject": "Feature: Raumbelegungsplan ohne Standard-Zeitraster exportierbar"
     },
@@ -495,11 +500,6 @@
       "hash": "c4b3989",
       "date": "2026-07-14",
       "subject": "Fix: Klassen-Stundenplan zeigt Termine aus fremdem Kontext"
-    },
-    {
-      "hash": "62d8766",
-      "date": "2026-07-14",
-      "subject": "Initial commit: elli mit Docker-Setup, Logo und Favicon"
     }
   ]
 }

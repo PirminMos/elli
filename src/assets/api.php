@@ -3717,8 +3717,12 @@ if ($action === 'export_raumbelegungsplan') {
         };
 
         // --- Kopf ---
-        $kopf  = $para('Raumbelegungsplan', true, 40, 'center', 60);
-        $kopf .= $para('für das Schuljahr ' . $raum['schuljahr'] . '          ' . $raum['name'], true, 30, 'center', 160);
+        // Der Raumname ist die eigentliche Ueberschrift des Blattes - man
+        // sucht in einem Stapel Plaene nach dem Raum, nicht nach dem Wort
+        // "Raumbelegungsplan". Er steht deshalb gross und fett oben; die
+        // Bezeichnung des Plans darunter bleibt klein und ungefettet.
+        $kopf  = $para($raum['name'], true, 44, 'center', 40);
+        $kopf .= $para('Raumbelegungsplan für das Schuljahr ' . $raum['schuljahr'], false, 24, 'center', 160);
 
         // --- Wochentabelle (Stunde + Mo–Fr) ---
         // Schriftgroesse 20 (10pt) statt 24: seit der Plan immer alle
@@ -3738,12 +3742,14 @@ if ($action === 'export_raumbelegungsplan') {
 
         if (empty($slots)) {
             $rows[] = $trow(array_merge(
-                [$tcell($para('', false, $TXT), $SW)],
+                [$tcell($para('', true, $TXT), $SW, 'D9D9D9')],
                 array_map(function () use ($tcell, $para, $DW) { return $tcell('', $DW); }, $tage)
             ), $ZEILENHOEHE, true);
         } else {
             foreach ($slots as $key => $sl) {
-                $cells = [$tcell($para($zeitLabel($sl['s'], $sl['e']), false, $TXT, 'center'), $SW)];
+                // Zeitspalte wie der Tabellenkopf grau hinterlegt und fett -
+                // sie ordnet die Zeile ein und ist selbst keine Belegung.
+                $cells = [$tcell($para($zeitLabel($sl['s'], $sl['e']), true, $TXT, 'center'), $SW, 'D9D9D9')];
                 foreach ($tage as $tag) {
                     $labels = $belegung[$key][$tag] ?? [];
                     $inner = '';
