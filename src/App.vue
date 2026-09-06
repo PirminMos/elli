@@ -7158,10 +7158,24 @@ export default {
           this.lehrerPlanForm.raum_ids.includes(r.id)
       );
     },
-    // Validierung basierend auf dem lehrerPlanForm Objekt
+    // Faerbt im Modal den Rahmen der Raumauswahl. Vue ruft das bei JEDEM
+    // Rendern auf - die Pruefung muss deshalb rein lesend bleiben und darf
+    // keine Meldung ausloesen.
+    // Ausserdem: der eigene Termin (form.termin_id) belegt den Raum ja bereits.
+    // Ohne ihn auszunehmen meldete das Oeffnen eines Termins zum Bearbeiten
+    // genau den Raum als belegt, den dieser Termin selbst nutzt.
     isLehrerRaumVerfuegbar(form) {
-      // Hier nutzt du deine bestehende Logik mit den Daten aus dem Form
-      return this.isRaumVerfuegbar(form.raum_ids, form.tag, form.start, form.ende);
+      if (!form || !form.raum_ids || form.raum_ids.length === 0) return true;
+
+      // Geschlossener Raum (Oeffnungszeiten) - harter Fehler, den das
+      // Speichern ebenfalls blockiert.
+      const geschlossen = form.raum_ids.some(rid =>
+          this.raumGeschlossen(rid, form.tag, form.start, form.ende));
+      if (geschlossen) return false;
+
+      // Doppelbelegung durch einen FREMDEN Termin.
+      return this.raumKollisionen(
+          form.raum_ids, form.tag, form.start, form.ende, form.termin_id).length === 0;
     },
     getLehrerRaumNamen(form) {
       if (!form.raum_ids || form.raum_ids.length === 0) return "Raum wählen...";
@@ -8365,6 +8379,11 @@ export default {
       }
       return treffer;
     },
+    // Reine Ja/Nein-Auskunft fuer Rahmenfarben im Template. Vue ruft sie beim
+    // Rendern auf - deshalb steht hier bewusst KEIN showStatus mehr: die
+    // Meldungen erschienen sonst schon beim blossen Oeffnen eines Termins,
+    // ohne dass der Nutzer etwas geaendert haette. Beim Speichern melden
+    // saveLehrerTermin und handleDrop die Konflikte weiterhin ausdruecklich.
     isRaumVerfuegbar(raum_id, tag, start, ende, termin_id = null) {
       // 1. Den richtigen Raum aus dem Array finden.
       //    Vergleich per String, da IDs je nach Quelle als Zahl (parseInt beim
@@ -8383,13 +8402,7 @@ export default {
               ende <= v.ende;
         });
 
-        if (!hatSlot) {
-          const zeiten = raum.verfuegbarkeiten
-              .map(v => `${v.tag} ${v.start.slice(0, 5)}–${v.ende.slice(0, 5)}`)
-              .join(', ');
-          this.showStatus(`${raum.name} ist zu dieser Zeit nicht verfügbar. Verfügbar: ${zeiten}.`, "error");
-          return false;
-        }
+        if (!hatSlot) return false;
       }
 
       // 3. Kollisionsprüfung mit existieFrenden Terminen
@@ -8405,14 +8418,7 @@ export default {
             ende > t.start;
       });
 
-      if (hatKollision) {
-        const aktivitaet = hatKollision.aktivitaet_id ? this.aktivitaeten.find(a => a.id === hatKollision.aktivitaet_id) :
-            this.faecher.find(a => a.id === hatKollision.fach_id);
-        const name = aktivitaet ? aktivitaet.name : "Unbekannte Aktivität";
-        this.showStatus(`${raum.name} belegt durch "${name}" (${hatKollision.start.slice(0, 5)} - ${hatKollision.ende.slice(0, 5)} Uhr)`, "error");
-        return false;
-      }
-      return true; // Alles okay!
+      return !hatKollision;
     },
     // ignoreTerminIds: ID (oder Liste von IDs) des gerade bearbeiteten Termins.
     // Beim Bearbeiten vergleicht sich ein Termin sonst mit sich selbst und die

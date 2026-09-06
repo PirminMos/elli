@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "a185e72",
+      "hash": "6efe1ca",
+      "date": "2026-09-06",
+      "subject": "Fix: Keine Fehlermeldung beim Oeffnen eines Termins zum Bearbeiten"
+    },
+    {
+      "hash": "19e9dda",
       "date": "2026-09-06",
       "subject": "Fix: Termin bearbeiten scheitert an der eigenen Klassenbelegung"
     },
