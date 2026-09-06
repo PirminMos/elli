@@ -2437,6 +2437,15 @@ select:focus {
   background-color: var(--negative)
 }
 
+/* Hinweis, der nichts blockiert: Raum/Kraft/Klasse ist zu dieser Zeit schon
+   verplant. Bewusst anders eingefaerbt als ein echter Fehler. */
+.snackbar.warn {
+  background-color: #8a6d1f;
+  white-space: pre-line;
+  text-align: left;
+  max-width: min(560px, 90vw);
+}
+
 /* Animation */
 .slide-up-enter-active, .slide-up-leave-active {
   transition: all 0.3s ease;
@@ -7471,7 +7480,10 @@ export default {
           .map(id => Number(id))
           .filter(id => id > 0 && !isNaN(id));
 
-      // --- 3. KONFLIKTPRÜFUNG (RAUM & BELEGUNG) ---
+      // --- 3. HINWEISE SAMMELN (RAUM & BELEGUNG) ---
+      // Keiner dieser Punkte verhindert das Ablegen; sie werden nur gemeldet.
+      const hinweise = [];
+
       if (raumIdsToCheck.length > 0) {
 
         // WICHTIG: Wir müssen sicherstellen, dass wir die ECHTE ID
@@ -7483,23 +7495,17 @@ export default {
         console.log("Schuelerstundenplan Item", item);
         console.log("Prüfe Räume:", raumIdsToCheck, "für", tag, stunde.start, 'bis', stunde.ende, "Exclude:", excludeId);
 
-        // Geschlossener Raum (Öffnungszeiten) bleibt ein harter Blocker.
+        // Geschlossener Raum: nur ein Hinweis, die Stunde wird trotzdem gesetzt.
         for (const raumId of raumIdsToCheck) {
           if (this.raumGeschlossen(raumId, tag, stunde.start, stunde.ende)) {
             const r = this.raumVerfuegbarkeiten.find(x => String(x.id) === String(raumId));
-            this.showStatus(`${r ? r.name : 'Raum'} ist zu dieser Zeit geschlossen.`, 'error');
-            return;
+            hinweise.push(`\u{1F6AB} ${r ? r.name : 'Raum'} ist zu dieser Zeit geschlossen.`);
           }
         }
 
-        // Raum-Doppelbelegung -> Warnung mit Rückfrage (Überbuchung erlauben).
-        const kollisionen = this.raumKollisionen(raumIdsToCheck, tag, stunde.start, stunde.ende, excludeId);
-        if (kollisionen.length > 0) {
-          const text = 'Dieser Raum ist zu dieser Zeit bereits belegt:\n\n' + kollisionen.join('\n') +
-              '\n\nMöchtest du den Raum trotzdem überbuchen?';
-          if (!await this.elliConfirm(text, 'Raum überbuchen?')) {
-            return; // Abgelehnt -> Stunde nicht setzen
-          }
+        // Raum-Doppelbelegung -> Hinweis, keine Rueckfrage mehr.
+        for (const zeile of this.raumKollisionen(raumIdsToCheck, tag, stunde.start, stunde.ende, excludeId)) {
+          hinweise.push('\u{1F6AA} Raum bereits belegt: ' + zeile.replace(/^\u2022\s*/, ''));
         }
       }
 
@@ -7510,8 +7516,8 @@ export default {
         console.log("Lehrerverfügbarkeiten", this.lehrerVerfuegbarkeiten);
         const istLehrerFrei = this.isLehrerVerfuegbar(item.erstkraft_id, tag, stunde.start, stunde.ende, excludeId);
         if (!istLehrerFrei) {
-          this.showStatus("Lehrer-Konflikt: Die Erstkraft ist bereits belegt.", "error");
-          return; // DROP ABBRECHEN
+          const l = this.erstkraefte.find(e => String(e.id) === String(item.erstkraft_id));
+          hinweise.push(`\u{1F464} ${l ? l.name : 'Die Erstkraft'} ist zu dieser Zeit bereits verplant.`);
         }
       }
 
@@ -7521,10 +7527,12 @@ export default {
       ).length;
 
       if (belegteSlots >= 2) {
-        this.showStatus("Dieser Zeitslot ist bereits voll belegt.", "error");
-        return;
+        hinweise.push('\u{1F3EB} Dieser Zeitslot ist bereits doppelt belegt.');
       }
       const wirdDifferenzierung = belegteSlots === 1;
+
+      // Alle gesammelten Hinweise auf einmal zeigen - sie halten nichts auf.
+      this.zeigeWarnungen(hinweise);
 
       // --- 6. AUSFÜHRUNG ---
       if (dragMode === 'move') {
@@ -7623,11 +7631,9 @@ export default {
 
       const {tag, start, ende} = this.pendingAssignment;
 
-      const lehrerOk = this.isLehrerVerfuegbar(lehrer.id, tag, start, ende);
-
-      if (!lehrerOk) {
-        this.showStatus(`Konflikt: ${lehrer.name} ist nicht verfügbar.`, "error");
-        return; // Bricht ab, Modal bleibt offen
+      if (!this.isLehrerVerfuegbar(lehrer.id, tag, start, ende)) {
+        // Nur ein Hinweis - die Zuweisung wird trotzdem uebernommen.
+        this.zeigeWarnungen(`\u{1F464} ${lehrer.name} ist zu dieser Zeit bereits verplant.`);
       }
 
       const existierendeTermineImSlot = this.currentSchuelerStundenPlan.termine.filter(t =>
@@ -7911,16 +7917,17 @@ export default {
       let endeNeu = this.lehrerPlanForm.ende;
       const tagNeu = this.lehrerPlanForm.tag;
 
-      // Geschlossener Raum (Öffnungszeiten) bleibt ein harter Blocker.
-      for (const eintrag of this.lehrerPlanForm.raum_ids) {
+      // Hinweise sammeln: geschlossener Raum und Doppelbelegungen halten das
+      // Speichern nicht mehr auf, sie werden nur gemeldet.
+      const hinweise = [];
+
+      for (const eintrag of this.lehrerPlanForm.raum_ids || []) {
         if (this.raumGeschlossen(eintrag, this.lehrerPlanForm.tag, this.lehrerPlanForm.start, this.lehrerPlanForm.ende)) {
           const r = this.raumVerfuegbarkeiten.find(x => String(x.id) === String(eintrag));
-          this.showStatus(`${r ? r.name : 'Raum'} ist zu dieser Zeit geschlossen.`, 'error');
-          return;
+          hinweise.push(`\u{1F6AB} ${r ? r.name : 'Raum'} ist zu dieser Zeit geschlossen.`);
         }
       }
 
-      // Raum-Doppelbelegung -> Warnung mit Rückfrage (Überbuchung erlauben).
       const raumKollisionen = this.raumKollisionen(
           this.lehrerPlanForm.raum_ids,
           this.lehrerPlanForm.tag,
@@ -7928,12 +7935,8 @@ export default {
           this.lehrerPlanForm.ende,
           this.lehrerPlanForm.termin_id
       );
-      if (raumKollisionen.length > 0) {
-        const text = 'Dieser Raum ist zu dieser Zeit bereits belegt:\n\n' + raumKollisionen.join('\n') +
-            '\n\nMöchtest du den Raum trotzdem überbuchen?';
-        if (!await this.elliConfirm(text, 'Raum überbuchen?')) {
-          return; // Abgelehnt
-        }
+      for (const zeile of raumKollisionen) {
+        hinweise.push('\u{1F6AA} Raum bereits belegt: ' + zeile.replace(/^\u2022\s*/, ''));
       }
 
       const excludeId = this.lehrerPlanForm.termin_id;
@@ -7952,9 +7955,12 @@ export default {
             startNeu,
             endeNeu,
             excludeId,
-            !!this.lehrerPlanForm.is_differenzierung
+            !!this.lehrerPlanForm.is_differenzierung,
+            hinweise
         );
-        if (!klasseCheck) return; // Bricht ab, falls Klasse nicht verfügbar oder außerhalb Raster
+        // Einzige harte Regel: der Termin muss ins Zeitraster der Klasse passen.
+        // Alles andere steht in 'hinweise' und blockiert nicht.
+        if (!klasseCheck) return;
       }
 
 
@@ -7988,13 +7994,12 @@ export default {
               ? (this.zweitkraefte.find(z => z.id === this.activeZweitkraftId)?.name || 'Die Kraft')
               : (this.erstkraefte.find(r => r.id === this.activeLehrerId)?.name || 'Die Lehrkraft');
 
-          this.showStatus(
-              `${kraftName} ist bereits verplant mit "${info}" (${zeit} Uhr)`,
-              "error"
-          );
-          return; // Abbruch der Speicherung
+          hinweise.push(`\u{1F464} ${kraftName} ist bereits verplant mit "${info}" (${zeit} Uhr)`);
         }
       }
+
+      // Die Hinweise werden erst ganz am Ende ausgegeben, damit die
+      // Erfolgsmeldung sie nicht sofort wieder ueberschreibt.
 
       // --- C. DATEN-MANIPULATION (Das Herzstück für die UI) ---
       // 1. Altes Objekt entfernen (beim Verschieben)
@@ -8070,7 +8075,10 @@ export default {
       this.resetLehrerForm();
       this.showLehrerPlanModal = false;
       this.showDienstPlanModal = false;
-      this.showStatus("Termin verarbeitet", "success");
+      // Gibt es Hinweise, sind sie die nuetzlichere Meldung - der Termin ist ja
+      // in beiden Faellen uebernommen.
+      if (hinweise.length) this.zeigeWarnungen(hinweise);
+      else this.showStatus("Termin verarbeitet", "success");
     },
     async saveKlasse() {
       try {
@@ -8135,6 +8143,7 @@ export default {
 
         if (result.success) {
           this.showStatus("Der Lehrerstundenplan wurde erfolgreich gespeichert.");
+          this.zeigeWarnungen(result.warnungen);
           // Neu laden, damit neue Termine ihre echten DB-IDs erhalten (statt temp-UUIDs).
           // Ohne das legt ein zweites Speichern die eben angelegten Zeilen erneut an.
           // Der Ladevorgang merkt sich auch den neuen Stand (merkePlanStand).
@@ -8170,6 +8179,7 @@ export default {
 
         if (result.success) {
           this.showStatus("Der Diensteinsatzplan wurde erfolgreich gespeichert.");
+          this.zeigeWarnungen(result.warnungen);
           // Neu laden, damit neue Termine ihre echten DB-IDs erhalten (statt temp-UUIDs)
           await this.loadDiensteinsatzplan(this.activeZweitkraftId);
           // Klassensicht (Termin-IDs fuer die Belegungspruefung) nachziehen
@@ -8421,6 +8431,7 @@ export default {
           // Neue ID für nachfolgende Updates setzen
           this.currentSchuelerStundenPlan.id = result.klasseId;
           this.showStatus("Schülerstundenplan erfolgreich gespeichert!", "success");
+          this.zeigeWarnungen(result.warnungen);
           // Der Plan wird nicht neu geladen - also hier den aktuellen Stand als
           // gespeichert vermerken, sonst bliebe die Aenderungsmarkierung stehen.
           this.merkePlanStand();
@@ -8539,7 +8550,10 @@ export default {
     // Klasse gilt faelschlich als belegt - Aendern von Raum/Fach waere unmoeglich.
     // istDifferenzierung: bei aeusserer Differenzierung sind zwei parallele
     // Termine einer Klasse gewollt, die Belegungspruefung entfaellt dann.
-    isKlasseVerfuegbar(klassenId, tag, start, ende, ignoreTerminIds = null, istDifferenzierung = false) {
+    // hinweise: optionale Sammelliste. Ist sie gesetzt, wandert der Belegungs-
+    // Hinweis dort hinein, statt sofort eine eigene Meldung auszuloesen - so
+    // erscheinen alle Hinweise eines Speichervorgangs zusammen.
+    isKlasseVerfuegbar(klassenId, tag, start, ende, ignoreTerminIds = null, istDifferenzierung = false, hinweise = null) {
       const klasse = this.klassenVerfuegbarkeiten.find(k => String(k.id) === String(klassenId));
 
       if (!klasse) {
@@ -8574,7 +8588,11 @@ export default {
       }
 
       // --- CHECK 2: BELEGUNG (Kollision mit anderen Terminen) ---
-      // Bei aeusserer Differenzierung darf die Klasse parallel belegt sein.
+      // Nur ein Hinweis: dass die Klasse zur selben Zeit schon etwas hat, darf
+      // das Speichern nicht verhindern. Hart bleibt allein das Zeitraster oben -
+      // ein Termin ausserhalb der Rasterstunden hat im Schuelerstundenplan
+      // keinen Platz.
+      // Bei aeusserer Differenzierung ist die Parallele ohnehin gewollt.
       if (istDifferenzierung) return true;
 
       // IDs als Strings vergleichen: die DB liefert "42", das Formular ggf. 42.
@@ -8595,8 +8613,9 @@ export default {
       if (kollision) {
         const fStart = kollision.start.substring(0, 5);
         const fEnde = kollision.ende.substring(0, 5);
-        this.showStatus(`Klasse ${klasse.name} ist bereits belegt: "${kollision.fach}" (${fStart}-${fEnde}).`, "error");
-        return false;
+        const text = `\u{1F3EB} Klasse ${klasse.name} ist bereits belegt: "${kollision.fach}" (${fStart}-${fEnde}).`;
+        if (Array.isArray(hinweise)) hinweise.push(text);
+        else this.zeigeWarnungen(text);
       }
 
       return true;
@@ -9604,15 +9623,30 @@ export default {
       }
       this.activeDropdown = null;
     },
-    showStatus(message, type = 'success') {
+    showStatus(message, type = 'success', dauer = 3000) {
       this.snackbar.message = message;
       this.snackbar.type = type;
       this.snackbar.show = true;
 
-      // Nach 3 Sekunden automatisch schließen
-      setTimeout(() => {
+      // Laufenden Timer ablesen, damit eine neue Meldung die alte nicht
+      // vorzeitig wegraeumt.
+      clearTimeout(this._snackbarTimer);
+      this._snackbarTimer = setTimeout(() => {
         this.snackbar.show = false;
-      }, 3000);
+      }, dauer);
+    },
+    // Hinweise zu belegten Raeumen, Kraeften oder Klassen. Sie halten das
+    // Speichern NICHT auf - der Plan wird trotzdem geschrieben. Mehrere
+    // Hinweise landen zusammen in einer Meldung, damit sie sich nicht
+    // gegenseitig ueberschreiben.
+    zeigeWarnungen(meldungen) {
+      const liste = (Array.isArray(meldungen) ? meldungen : [meldungen])
+          .map(m => String(m || '').trim())
+          .filter(m => m !== '');
+      if (!liste.length) return;
+      const einmalig = [...new Set(liste)];
+      // Laenger stehen lassen als eine Erfolgsmeldung: Hinweise will man lesen.
+      this.showStatus(einmalig.join('\n'), 'warn', 3000 + einmalig.length * 2000);
     },
     toggleSelection(array, value) {
       // Wir wandeln alles in Strings um für einen sicheren Vergleich
@@ -10190,6 +10224,8 @@ export default {
 
         if (result.success) {
           this.showStatus('Erfolgreich gespeichert!');
+          // Hinweise des Servers (belegter Raum / verplante Kraft) nachreichen
+          this.zeigeWarnungen(result.warnungen);
 
           // UI Updates
           await this.loadFromDatabase(); // Lade alles frisch

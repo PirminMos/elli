@@ -53,10 +53,20 @@ $action = $_GET['action'] ?? '';
  *                          Die ID des gerade bearbeiteten Termins gehoert immer
  *                          hierhin - sonst kollidiert ein Termin mit sich selbst.
  *
- * @return string[] Konfliktmeldungen (leer = alles frei)
+ * Getrennt nach Schwere:
+ *  - 'blocker'   verhindern das Speichern. Das ist ausschliesslich die
+ *                Zeitrasterpruefung: ein Termin ausserhalb der Rasterstunden
+ *                einer Klasse hat im Schuelerstundenplan keinen Platz und
+ *                bekaeme keine stunden_id - er waere nicht darstellbar.
+ *  - 'warnungen' sind reine Hinweise. Ob eine Klasse, ein Raum oder eine Kraft
+ *                zu dieser Zeit schon verplant ist, entscheidet die Schulleitung
+ *                selbst; gespeichert wird trotzdem.
+ *
+ * @return array{blocker: string[], warnungen: string[]}
  */
 function elli_finde_konflikte(PDO $conn, array $opts) {
-    $konflikte = [];
+    $blocker   = [];
+    $warnungen = [];
     $tag   = $opts['tag'];
     $start = substr((string)$opts['start'], 0, 8);
     $ende  = substr((string)$opts['ende'], 0, 8);
@@ -100,7 +110,7 @@ function elli_finde_konflikte(PDO $conn, array $opts) {
                     $liste = implode(', ', array_map(function ($f) {
                         return $f['tag'] . ' ' . substr($f['startzeit'],0,5) . '–' . substr($f['endzeit'],0,5);
                     }, $fenster));
-                    $konflikte[] = "🚫 {$raum['name']} ist $tag " . substr($start,0,5) . "–" . substr($ende,0,5) .
+                    $warnungen[] = "🚫 {$raum['name']} ist $tag " . substr($start,0,5) . "–" . substr($ende,0,5) .
                         " nicht verfügbar. Verfügbar: $liste.";
                 }
             }
@@ -129,7 +139,7 @@ function elli_finde_konflikte(PDO $conn, array $opts) {
         $stmt = $conn->prepare($sql);
         $stmt->execute(array_merge([$kid, $ktyp, $tag, $ende, $start], $excludes));
         if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $konflikte[] = "👤 {$row['kraft_name']} ist bereits verplant: \"{$row['bez']}\" ($tag " .
+            $warnungen[] = "👤 {$row['kraft_name']} ist bereits verplant: \"{$row['bez']}\" ($tag " .
                 substr($row['start'],0,5) . "–" . substr($row['ende'],0,5) . ")";
         }
     }
@@ -154,7 +164,7 @@ function elli_finde_konflikte(PDO $conn, array $opts) {
             $stmt = $conn->prepare($sql);
             $stmt->execute(array_merge([$klassenId, $tag, $ende, $start], $excludes));
             if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $konflikte[] = "🏫 Klasse $klassenName ist bereits belegt: \"{$row['bez']}\" ($tag " .
+                $warnungen[] = "🏫 Klasse $klassenName ist bereits belegt: \"{$row['bez']}\" ($tag " .
                     substr($row['start'],0,5) . "–" . substr($row['ende'],0,5) . ")";
             }
         }
@@ -170,20 +180,20 @@ function elli_finde_konflikte(PDO $conn, array $opts) {
             $stmtHat = $conn->prepare("SELECT COUNT(*) FROM klassen_zeitraster WHERE klasse_id = ?");
             $stmtHat->execute([$klassenId]);
             if ((int)$stmtHat->fetchColumn() > 0) {
-                $konflikte[] = "⏰ Zeitraum passt in keine Rasterstunde der Klasse $klassenName ($tag " .
+                $blocker[] = "⏰ Zeitraum passt in keine Rasterstunde der Klasse $klassenName ($tag " .
                     substr($start,0,5) . "–" . substr($ende,0,5) . ")";
             }
         } else {
             $minStart = min(array_column($slots, 'startzeit'));
             $maxEnde  = max(array_column($slots, 'endzeit'));
             if ($minStart > $start || $maxEnde < $ende) {
-                $konflikte[] = "⏰ Zeitraum überschreitet das Zeitraster der Klasse $klassenName (Raster: " .
+                $blocker[] = "⏰ Zeitraum überschreitet das Zeitraster der Klasse $klassenName (Raster: " .
                     substr($minStart,0,5) . "–" . substr($maxEnde,0,5) . ")";
             }
         }
     }
 
-    return $konflikte;
+    return ['blocker' => $blocker, 'warnungen' => $warnungen];
 }
 
 /**
@@ -1229,9 +1239,12 @@ if ($action === 'save_activity') {
         // impliziten Commit aus (siehe save_zweitkraft).
         elli_ensure_aktivitaet_kraft_typ($conn);
         $conn->beginTransaction();
-        $konflikte = [];
+        // Verfuegbarkeit von Raum und Kraft ist nur ein Hinweis - gespeichert
+        // wird in jedem Fall. Die Meldungen gehen mit der Antwort zurueck und
+        // erscheinen im Frontend als Warnung unten mittig.
+        $warnungen = [];
 
-        // --- 1. VALIDIERUNG ---
+        // --- 1. HINWEISE SAMMELN ---
         if (!empty($data['termine'])) {
             foreach ($data['termine'] as $t) {
                 $tag = $t['tag'];
@@ -1274,7 +1287,7 @@ if ($action === 'save_activity') {
                                 $liste = implode(', ', array_map(function ($f) {
                                     return $f['tag'] . ' ' . substr($f['startzeit'],0,5) . '–' . substr($f['endzeit'],0,5);
                                 }, $fensterAkt));
-                                $konflikte[] = "🚫 " . $raumBasis['name'] . " ist $tag nicht verfügbar. Verfügbar: $liste.";
+                                $warnungen[] = "🚫 " . $raumBasis['name'] . " ist $tag nicht verfügbar. Verfügbar: $liste.";
                             }
                         }
                     }
@@ -1328,7 +1341,7 @@ if ($action === 'save_activity') {
                     $stmtK->execute($paramsKraft);
 
                     if ($rowK = $stmtK->fetch()) {
-                        $konflikte[] = sprintf(
+                        $warnungen[] = sprintf(
                             "👤 %s ist bereits verplant: '%s' am %s von %s bis %s",
                             $rowK['lehrer_name'],
                             $rowK['akt_name'],
@@ -1341,13 +1354,7 @@ if ($action === 'save_activity') {
             }
         }
 
-        if (!empty($konflikte)) {
-            $conn->rollBack();
-            echo json_encode(['success' => false, 'error' => implode("\n", array_unique($konflikte))]);
-            exit;
-        }
-
-        // --- 2. SPEICHERN ---
+        // --- 2. SPEICHERN (Hinweise halten das Speichern nicht auf) ---
         if ($aktId) {
             $conn->prepare("UPDATE aktivitaet SET typ = ?, name = ?, einsatzort = ?, kraft_typ = ? WHERE id = ?")
                              ->execute([$data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort, $kraftTyp, $aktId]);
@@ -1408,7 +1415,7 @@ if ($action === 'save_activity') {
         }
 
         $conn->commit();
-        echo json_encode(['success' => true]);
+        echo json_encode(['success' => true, 'warnungen' => array_values(array_unique($warnungen))]);
 
     } catch (Exception $e) {
         if (isset($conn) && $conn->inTransaction()) $conn->rollBack();
@@ -1730,7 +1737,8 @@ if ($action === 'save_schuelerstundenplan') {
         $stmtOwn->execute([$klasseId]);
         $eigeneTerminIds = $stmtOwn->fetchAll(PDO::FETCH_COLUMN);
 
-        $alleKonflikte = [];
+        $blocker   = [];
+        $warnungen = [];
         foreach ($plan['termine'] as $t) {
             $stundenId = (int)$t['stunden_id'];
             $chkStart = isset($rasterMapping[$stundenId]) ? $rasterMapping[$stundenId]['startzeit'] : ($t['start'] ?? '00:00');
@@ -1743,7 +1751,7 @@ if ($action === 'save_schuelerstundenplan') {
             if (!empty($t['erstkraft_id']))  $chkKraefte[] = ['id' => $t['erstkraft_id'], 'typ' => 'erst'];
             if (!empty($t['zweitkraft_id'])) $chkKraefte[] = ['id' => $t['zweitkraft_id'], 'typ' => 'zweit'];
 
-            $alleKonflikte = array_merge($alleKonflikte, elli_finde_konflikte($conn, [
+            $k = elli_finde_konflikte($conn, [
                 'tag' => $t['tag'],
                 'start' => $chkStart,
                 'ende' => $chkEnde,
@@ -1752,11 +1760,13 @@ if ($action === 'save_schuelerstundenplan') {
                 // Eigene Klasse nicht prüfen: Parallel-Slots sind hier Differenzierung
                 'klassen_id' => null,
                 'exclude_termin_ids' => $eigeneTerminIds,
-            ]));
+            ]);
+            $blocker   = array_merge($blocker, $k['blocker']);
+            $warnungen = array_merge($warnungen, $k['warnungen']);
         }
-        if (!empty($alleKonflikte)) {
+        if (!empty($blocker)) {
             $conn->rollBack();
-            echo json_encode(['success' => false, 'error' => implode("\n", array_unique($alleKonflikte))]);
+            echo json_encode(['success' => false, 'error' => implode(chr(10), array_unique($blocker))]);
             exit;
         }
 
@@ -1871,7 +1881,11 @@ if ($action === 'save_schuelerstundenplan') {
         }
 
         $conn->commit();
-        echo json_encode(["success" => true, "klasseId" => $klasseId]);
+        echo json_encode([
+            "success"   => true,
+            "klasseId"  => $klasseId,
+            "warnungen" => array_values(array_unique($warnungen)),
+        ]);
 
     } catch (Exception $e) {
         if ($conn->inTransaction()) { $conn->rollBack(); }
@@ -3320,7 +3334,8 @@ if ($action === 'get_raum_verfuegbarkeit') {
             //     Alle bestehenden Termine dieser Lehrkraft werden ausgenommen
             //     (sie werden ersetzt oder gelöscht).
             $excludeIds = array_values(array_unique(array_merge($dbIds, $frontendIds)));
-            $alleKonflikte = [];
+            $blocker   = [];
+            $warnungen = [];
             $rasterCache = [];
             foreach ($data['termine'] as $idx => $t) {
                 if (empty($t['tag']) || empty($t['start']) || empty($t['ende'])) continue;
@@ -3341,14 +3356,14 @@ if ($action === 'get_raum_verfuegbarkeit') {
                         $t['start'] = $zr['startzeit'];
                         $t['ende']  = $zr['endzeit'];
                     } elseif ($rast['status'] === 'no_match') {
-                        $alleKonflikte[] = "🕒 Klasse {$rast['name']}: " . substr((string)$t['start'], 0, 5) .
+                        $blocker[] = "🕒 Klasse {$rast['name']}: " . substr((string)$t['start'], 0, 5) .
                             " passt in keine Schulstunde des Klassenrasters.";
                         continue; // nicht zusaetzlich auf Doppelbelegung pruefen
                     }
                     // 'no_raster' -> Klasse ohne gepflegtes Raster: stunden_id unveraendert lassen
                 }
 
-                $alleKonflikte = array_merge($alleKonflikte, elli_finde_konflikte($conn, [
+                $k = elli_finde_konflikte($conn, [
                     'tag' => $t['tag'],
                     'start' => $t['start'],
                     'ende' => $t['ende'],
@@ -3357,11 +3372,13 @@ if ($action === 'get_raum_verfuegbarkeit') {
                     'klassen_id' => $t['klassen_id'] ?? null,
                     'is_differenzierung' => !empty($t['is_differenzierung']),
                     'exclude_termin_ids' => $excludeIds,
-                ]));
+                ]);
+                $blocker   = array_merge($blocker, $k['blocker']);
+                $warnungen = array_merge($warnungen, $k['warnungen']);
             }
-            if (!empty($alleKonflikte)) {
+            if (!empty($blocker)) {
                 $conn->rollBack();
-                echo json_encode(['success' => false, 'error' => implode("\n", array_unique($alleKonflikte))]);
+                echo json_encode(['success' => false, 'error' => implode(chr(10), array_unique($blocker))]);
                 exit;
             }
 
@@ -3482,7 +3499,11 @@ if ($action === 'get_raum_verfuegbarkeit') {
               }
 
               $conn->commit();
-              echo json_encode(["success" => true, "message" => "Gespeichert"]);
+              echo json_encode([
+                  "success"   => true,
+                  "message"   => "Gespeichert",
+                  "warnungen" => array_values(array_unique($warnungen)),
+              ]);
               exit;
 
           } catch (Exception $e) {
@@ -3529,10 +3550,11 @@ if ($action === 'get_raum_verfuegbarkeit') {
           //     Alle bestehenden Termine dieser Zweitkraft werden ausgenommen
           //     (sie werden ersetzt oder gelöscht).
           $excludeIds = array_values(array_unique(array_merge($dbIds, $frontendIds)));
-          $alleKonflikte = [];
+          $blocker   = [];
+          $warnungen = [];
           foreach ($termine as $t) {
               if (empty($t['tag']) || empty($t['start']) || empty($t['ende'])) continue;
-              $alleKonflikte = array_merge($alleKonflikte, elli_finde_konflikte($conn, [
+              $k = elli_finde_konflikte($conn, [
                   'tag' => $t['tag'],
                   'start' => $t['start'],
                   'ende' => $t['ende'],
@@ -3541,11 +3563,13 @@ if ($action === 'get_raum_verfuegbarkeit') {
                   'klassen_id' => $t['klassen_id'] ?? null,
                   'is_differenzierung' => !empty($t['is_differenzierung']),
                   'exclude_termin_ids' => $excludeIds,
-              ]));
+              ]);
+              $blocker   = array_merge($blocker, $k['blocker']);
+              $warnungen = array_merge($warnungen, $k['warnungen']);
           }
-          if (!empty($alleKonflikte)) {
+          if (!empty($blocker)) {
               $conn->rollBack();
-              echo json_encode(['success' => false, 'error' => implode("\n", array_unique($alleKonflikte))]);
+              echo json_encode(['success' => false, 'error' => implode(chr(10), array_unique($blocker))]);
               exit;
           }
 
@@ -3624,7 +3648,11 @@ if ($action === 'get_raum_verfuegbarkeit') {
           }
 
           $conn->commit();
-          echo json_encode(["success" => true, "message" => "Diensteinsatzplan gespeichert"]);
+          echo json_encode([
+              "success"   => true,
+              "message"   => "Diensteinsatzplan gespeichert",
+              "warnungen" => array_values(array_unique($warnungen)),
+          ]);
           exit;
 
       } catch (Exception $e) {

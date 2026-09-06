@@ -2,7 +2,12 @@
   "generated": "2026-09-06",
   "commits": [
     {
-      "hash": "1fa158e",
+      "hash": "b289b8f",
+      "date": "2026-09-06",
+      "subject": "Feature: Verfuegbarkeitspruefungen warnen, statt zu blockieren"
+    },
+    {
+      "hash": "27f6d8e",
       "date": "2026-09-06",
       "subject": "Feature: Diensteinsatzplan weist Tagesarbeitszeit je Tag aus"
     },
