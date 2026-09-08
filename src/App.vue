@@ -397,6 +397,18 @@
                 </div>
               </transition>
             </div>
+
+            <!-- Blocker wie die Mittagspause: stehen im Plan, zaehlen aber
+                 nicht auf die Stunden. Nur bei Zweitkraft-Aktivitaeten. -->
+            <label class="blocker-opt">
+              <input type="checkbox" v-model="currentActivity.zaehlt_nicht"
+                     :true-value="1" :false-value="0">
+              <span>
+                Zeitblocker – zählt nicht auf die Stunden
+                <small>z.B. Mittagspause: erscheint im Dienstplan, bleibt bei IST-Stunden
+                  und Tagesarbeitszeit außen vor.</small>
+              </span>
+            </label>
           </div>
 
           <div class="input-group full-width">
@@ -1379,12 +1391,12 @@ Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als le
                 <div v-for="a in aktivitaetenZweitMitFarbe"
                      :key="a.id"
                      class="draggable-subject-activity"
-                     :class="{ 'is-dragging': draggingId === a.id }"
+                     :class="{ 'is-dragging': draggingId === a.id, 'is-blocker': a.zaehlt_nicht }"
                      draggable="true"
                      @dragstart="handleLehrerDragStart($event, a, 'a')"
                      @dragend="handleDragEnd"
                      @click="showStatus('Aktivitäten in den Plan ziehen')"
-                     :style="{borderColor: a.farbe, color: a.farbe}">
+                     :style="a.zaehlt_nicht ? {} : {borderColor: a.farbe, color: a.farbe}">
                   {{ a.name }}{{ a.einsatzort ? ' ' + a.einsatzort : '' }}
                 </div>
                 <button class="btn-add white-text" @click="openQuickAdd('aktivitaet')">+ Aktivität</button>
@@ -5309,6 +5321,46 @@ input:checked + .slider:before {
   cursor: help;
 }
 
+/* Zeitblocker (Mittagspause) in der Werkzeugleiste des Dienstplans */
+.draggable-subject-activity.is-blocker {
+  background: linear-gradient(135deg, #f7971e 0%, #f45b69 30%, #a24bcf 60%, #2c73d2 85%, #00c9a7 100%);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* Ankreuzfeld "Zeitblocker" im Aktivitaets-Formular.
+   Als "label.blocker-opt" geschrieben, weil ".input-group label" mit
+   display:block sonst spezifischer waere und das Flex-Layout aushebelt. */
+.input-group label.blocker-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  margin-bottom: 0;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  user-select: none;
+}
+
+.input-group label.blocker-opt input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: #a24bcf;
+  cursor: pointer;
+  flex: none;
+}
+
+.input-group label.blocker-opt small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.5);
+}
+
 /* Diensteinsatzplan: Einsatzort-Hinweis im Termin-Modal */
 .einsatzort-hint {
   font-size: 0.85rem;
@@ -5875,6 +5927,11 @@ import {computed, ref} from "vue";
 // Standard: gleiche Herkunft wie das ausgelieferte Frontend (Docker/Prod).
 // Für lokale Entwicklung via .env(.local) überschreibbar: VITE_API_URL=http://192.168.178.52:8080/api.php
 const API_URL = import.meta.env.VITE_API_URL || '/api.php'
+
+// Farbverlauf fuer Zeitblocker (Mittagspause). Bewusst bunt, damit er
+// sich von den Pastelltoenen der Aktivitaeten klar abhebt.
+const BLOCKER_VERLAUF =
+    'linear-gradient(135deg, #f7971e 0%, #f45b69 30%, #a24bcf 60%, #2c73d2 85%, #00c9a7 100%)'
 
 import iconAktivitaet from '@/assets/icons/aktivitaet.svg'
 // Seestern für die Aktivitäten der Zweitkräfte – damit die beiden
@@ -6601,6 +6658,10 @@ export default {
       });
       // b) Aktivitäten aus den Terminen (liefern die IST-Stunden)
       termine.forEach(t => {
+        // Zeitblocker (Mittagspause) belegen Zeit im Plan, sind aber keine
+        // Arbeitszeit: weder eigene Zeile noch Beitrag zum IST. Damit bleibt
+        // auch totalIst_Dienst unberuehrt, das ueber diese Zeilen summiert.
+        if (t.zaehlt_nicht) return;
         let dauer = 0;
         if (t.start && t.ende) {
           const [hStart, mStart] = t.start.split(':').map(Number);
@@ -6646,6 +6707,7 @@ export default {
           name: '',
           einsatzort: '',
           kraft_typ: this.aktivitaetsKraftTyp,
+          zaehlt_nicht: 0,        // Zeitblocker (Mittagspause), s. save_activity
           verantwortliche: [], // Wichtig: Als Array initialisieren
           raeume: [],          // Wichtig: Als Array initialisieren
           termine: []          // Wichtig: Als leeres Array initialisieren
@@ -8206,7 +8268,11 @@ export default {
         fach_id: type === 'f' ? item.id : null,
         fach: type === 'f' ? item.name : null,
         farbe: item.farbe,
-        typ: item.typ || null
+        typ: item.typ || null,
+        // Zeitblocker (Mittagspause). Ohne dieses Feld kaeme der frisch
+        // abgelegte Termin ohne Kennzeichen im Plan an und wuerde bis zum
+        // naechsten Neuladen auf die IST-Stunden angerechnet.
+        zaehlt_nicht: type === 'a' ? (item.zaehlt_nicht ? 1 : 0) : 0
       }
 
       // Das komplette Objekt für komplexe Datenübernahme (optional)
@@ -8278,11 +8344,19 @@ export default {
             : 1;
       }
 
+      // Zeitblocker (Mittagspause) starten mit der ueblichen Mittagszeit
+      // statt der ersten Schulstunde. Greift nur beim Neuanlegen aus der
+      // Werkzeugleiste - ein verschobener Termin bringt seine Zeiten selbst
+      // mit und behaelt sie. Im Modal laesst sich beides frei aendern.
+      const istBlocker = !!fullData.zaehlt_nicht;
+      const blockerStart = '12:30';
+      const blockerEnde = '14:00';
+
       this.lehrerPlanForm = {
         termin_id: fullData.termin_id || crypto.randomUUID(), // Erzeugt eine echte UUID,
         tag: tag,
-        start: fullData.start ? fullData.start.slice(0, 5) : "08:15",
-        ende: fullData.ende ? fullData.ende.slice(0, 5) : "09:00",
+        start: fullData.start ? fullData.start.slice(0, 5) : (istBlocker ? blockerStart : "08:15"),
+        ende: fullData.ende ? fullData.ende.slice(0, 5) : (istBlocker ? blockerEnde : "09:00"),
         klassen_name: fullData.klasse || null,
         fach: fullData.fach || null,
         fach_id: fullData.fach_id || null,
@@ -8298,6 +8372,9 @@ export default {
         raeume: fullData.raeume || [],
         raum_ids: raeume || [],
         immer_verfuegbar: fullData.immer_verfuegbar || null,
+        // Beim Neuanlegen aus der Werkzeugleiste wie beim Verschieben eines
+        // bestehenden Termins: beide bringen das Kennzeichen in fullData mit.
+        zaehlt_nicht: fullData.zaehlt_nicht ? 1 : 0,
         dragMode: dragMode,
         farbe: farbe,
       };
@@ -8322,7 +8399,7 @@ export default {
           this.updateTimeFromUnits();
         } else {
           // Standardzeit für Aktivitäten – kann im Modal frei geändert werden
-          this.lehrerPlanForm.ende = '08:45';
+          this.lehrerPlanForm.ende = istBlocker ? blockerEnde : '08:45';
         }
       }
 
@@ -9354,7 +9431,11 @@ export default {
         height: `${hoehe - 2}px`,
         left: `5%`,
         width: `90%`,
-        backgroundColor: this.getDienstFarbe(termin),
+        // Zeitblocker heben sich mit einem Farbverlauf von den Aktivitäten ab.
+        // 'background' statt 'backgroundColor', sonst greift der Verlauf nicht.
+        ...(termin.zaehlt_nicht
+            ? {background: BLOCKER_VERLAUF}
+            : {backgroundColor: this.getDienstFarbe(termin)}),
         zIndex: 10 + index,
       };
     },

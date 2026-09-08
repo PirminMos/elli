@@ -332,6 +332,26 @@ function elli_ensure_aktivitaet_kraft_typ(PDO $conn) {
     ");
 }
 
+/**
+ * Selbstheilung: Kennzeichen "zaehlt nicht auf die Stunden".
+ *
+ * Aktivitaeten mit diesem Kennzeichen erscheinen im Dienstplan, bleiben aber
+ * bei IST-Stunden und Tagesarbeitszeit aussen vor. Gedacht fuer Blocker wie
+ * die Mittagspause: Sie belegt Zeit im Plan, ist aber keine Arbeitszeit.
+ */
+function elli_ensure_aktivitaet_zaehlt_nicht(PDO $conn) {
+    $vorhanden = $conn->query("
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'aktivitaet' AND COLUMN_NAME = 'zaehlt_nicht'
+    ")->fetchColumn();
+
+    if ((int)$vorhanden > 0) return;
+
+    $conn->exec("ALTER TABLE aktivitaet
+        ADD COLUMN zaehlt_nicht TINYINT(1) NOT NULL DEFAULT 0");
+}
+
 // Selbstheilung: Zweit-/Drittberuf und Geschlechts-Flag der Zweitkraft.
 // typ2/typ3 halten die kanonische (weibliche) Berufsbezeichnung; maennlich
 // steuert nur die Anzeige (Opt-In auf die maennliche Form).
@@ -1200,8 +1220,8 @@ if ($action === 'copy_schuljahr_data') {
 
         // 3. Aktivitaeten
         $conn->prepare("
-            INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort, kraft_typ)
-            SELECT ?, typ, name, einsatzort, kraft_typ FROM aktivitaet WHERE schuljahr_id = ?
+            INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort, kraft_typ, zaehlt_nicht)
+            SELECT ?, typ, name, einsatzort, kraft_typ, zaehlt_nicht FROM aktivitaet WHERE schuljahr_id = ?
         ")->execute([$dst, $src]);
 
         // 4. Klassen (mit Map fuer Zeitraster)
@@ -1661,7 +1681,9 @@ if ($action === 'load_activities') {
 
     // 1. Alle Aktivitäten des Schuljahres holen
     elli_ensure_aktivitaet_kraft_typ($conn);
-    $stmt = $conn->prepare("SELECT id, name, typ, einsatzort, kraft_typ FROM aktivitaet WHERE schuljahr_id = :sid");
+    elli_ensure_aktivitaet_zaehlt_nicht($conn);
+    $stmt = $conn->prepare("SELECT id, name, typ, einsatzort, kraft_typ, zaehlt_nicht
+                            FROM aktivitaet WHERE schuljahr_id = :sid");
     $stmt->execute([':sid' => $sid]);
     $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -1961,11 +1983,15 @@ if ($action === 'save_activity') {
     // Diensteinsatz der Zweitkraefte.
     $kraftTyp = ($data['kraft_typ'] ?? 'zweit') === 'erst' ? 'erst' : 'zweit';
     $einsatzort = $kraftTyp === 'erst' ? null : ($data['einsatzort'] ?? null);
+    // Blocker wie die Mittagspause: stehen im Plan, zaehlen aber nicht auf
+    // die Stunden. Nur fuer Zweitkraft-Aktivitaeten vorgesehen.
+    $zaehltNicht = ($kraftTyp === 'zweit' && !empty($data['zaehlt_nicht'])) ? 1 : 0;
 
     try {
         // DDL vor der Transaktion: ALTER TABLE loest in MariaDB einen
         // impliziten Commit aus (siehe save_zweitkraft).
         elli_ensure_aktivitaet_kraft_typ($conn);
+        elli_ensure_aktivitaet_zaehlt_nicht($conn);
         $conn->beginTransaction();
         // Verfuegbarkeit von Raum und Kraft ist nur ein Hinweis - gespeichert
         // wird in jedem Fall. Die Meldungen gehen mit der Antwort zurueck und
@@ -2084,16 +2110,16 @@ if ($action === 'save_activity') {
 
         // --- 2. SPEICHERN (Hinweise halten das Speichern nicht auf) ---
         if ($aktId) {
-            $conn->prepare("UPDATE aktivitaet SET typ = ?, name = ?, einsatzort = ?, kraft_typ = ? WHERE id = ?")
-                             ->execute([$data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort, $kraftTyp, $aktId]);
+            $conn->prepare("UPDATE aktivitaet SET typ = ?, name = ?, einsatzort = ?, kraft_typ = ?, zaehlt_nicht = ? WHERE id = ?")
+                             ->execute([$data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort, $kraftTyp, $zaehltNicht, $aktId]);
             // Clean Slate
             $conn->prepare("DELETE FROM termin_raeume WHERE termin_id IN (SELECT id FROM termin WHERE aktivitaet_id = ?)")->execute([$aktId]);
             $conn->prepare("DELETE FROM termin_verantwortliche WHERE termin_id IN (SELECT id FROM termin WHERE aktivitaet_id = ?)")->execute([$aktId]);
             $conn->prepare("DELETE FROM termin WHERE aktivitaet_id = ?")->execute([$aktId]);
             $aktivitaetId = $aktId;
         } else {
-            $stmtAct = $conn->prepare("INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort, kraft_typ) VALUES (?, ?, ?, ?, ?)");
-            $stmtAct->execute([$sid, $data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort, $kraftTyp]);
+            $stmtAct = $conn->prepare("INSERT INTO aktivitaet (schuljahr_id, typ, name, einsatzort, kraft_typ, zaehlt_nicht) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmtAct->execute([$sid, $data['typ'] ?? 'AG', $data['name'] ?? 'Unbenannt', $einsatzort, $kraftTyp, $zaehltNicht]);
             $aktivitaetId = $conn->lastInsertId();
         }
 
@@ -4677,7 +4703,8 @@ if ($action === 'get_raum_verfuegbarkeit') {
 
           // 3. Termine (Einsatzort kommt aus der Aktivität)
           $stmtT = $conn->prepare("SELECT t.tag, t.start, t.ende,
-                                          k.name AS klasse, a.name AS aktivitaet, a.einsatzort
+                                          k.name AS klasse, a.name AS aktivitaet, a.einsatzort,
+                                          COALESCE(a.zaehlt_nicht, 0) AS zaehlt_nicht
                                    FROM termin_verantwortliche tv
                                    JOIN termin t ON t.id = tv.termin_id
                                    LEFT JOIN klassen k ON k.id = t.klassen_id
@@ -4782,12 +4809,19 @@ if ($action === 'get_raum_verfuegbarkeit') {
           foreach ($slots as $tag => [$prefix, $anzahl, $tazFeld]) {
               $liste = $byTag[$tag] ?? [];
 
-              // Tagesarbeitszeit = Summe der geleisteten Termine. Weil je Termin
-              // gerechnet wird, zaehlt eine Luecke dazwischen (Mittagspause) nicht
-              // mit. Summiert wird ueber ALLE Termine des Tages - auch ueber die,
-              // fuer die im Template keine Zeile mehr frei ist.
+              // Tagesarbeitszeit = Summe der geleisteten Termine. Summiert wird
+              // ueber ALLE Termine des Tages - auch ueber die, fuer die im
+              // Template keine Zeile mehr frei ist.
+              //
+              // Uebersprungen werden Blocker mit dem Kennzeichen
+              // "zaehlt nicht" (Mittagspause). Sie stehen als Zeile im Plan,
+              // sind aber keine Arbeitszeit. Frueher war die Mittagspause eine
+              // blosse Luecke zwischen zwei Terminen und fiel damit von selbst
+              // heraus; seit sie sich eintragen laesst, muss sie hier aktiv
+              // ausgenommen werden.
               $tagesSumme = 0.0;
               foreach ($liste as $t) {
+                  if (!empty($t['zaehlt_nicht'])) continue;
                   $d = (strtotime($t['ende']) - strtotime($t['start'])) / 3600;
                   if ($d > 0) $tagesSumme += $d;
               }
@@ -4809,9 +4843,14 @@ if ($action === 'get_raum_verfuegbarkeit') {
                           if (!$schonDrin) $teile[] = $teil;
                       }
                       $dauer = (strtotime($t['ende']) - strtotime($t['start'])) / 3600;
+                      // Zeitblocker stehen mit Zeit und Bezeichnung im Plan,
+                      // aber ohne Stundenwert: Sie sind keine geleistete
+                      // Arbeitszeit, und eine Zahl hier widerspraeche der
+                      // Tagesarbeitszeit darunter, die sie nicht mitzaehlt.
+                      $zeigeStunden = empty($t['zaehlt_nicht']) && $dauer > 0;
                       $tpl->setValue($prefix . $i . 'z', $esc($zeit));
                       $tpl->setValue($prefix . $i . 'e', $esc(implode(' ', $teile)));
-                      $tpl->setValue($prefix . $i . 's', $dauer > 0 ? $fmtStunden($dauer) : '');
+                      $tpl->setValue($prefix . $i . 's', $zeigeStunden ? $fmtStunden($dauer) : '');
                   } else {
                       $tpl->setValue($prefix . $i . 'z', '');
                       $tpl->setValue($prefix . $i . 'e', '');
@@ -4883,7 +4922,8 @@ if ($action === 'get_raum_verfuegbarkeit') {
                       a.einsatzort AS einsatzort,
                       k.id AS klassen_id, k.name AS klassen_name,
                       s.id AS schulfach_id, s.name AS schulfach_name, s.farbe AS schulfach_farbe,
-                      a.id AS aktivitaet_id, a.name AS aktivitaet_name, a.typ AS aktivitaet_typ
+                      a.id AS aktivitaet_id, a.name AS aktivitaet_name, a.typ AS aktivitaet_typ,
+                      COALESCE(a.zaehlt_nicht, 0) AS zaehlt_nicht
                    FROM termin_verantwortliche AS tv
                    JOIN termin AS t ON t.id = tv.termin_id
                    LEFT JOIN klassen AS k ON k.id = t.klassen_id
@@ -4950,6 +4990,9 @@ if ($action === 'get_raum_verfuegbarkeit') {
                   'aktivitaet_id'      => $row['aktivitaet_id'] !== null ? (int)$row['aktivitaet_id'] : null,
                   'aktivitaet'         => $row['aktivitaet_name'],
                   'aktivitaet_typ'     => $row['aktivitaet_typ'],
+                  // Zeitblocker (Mittagspause): steht im Plan, zaehlt aber
+                  // nicht auf IST-Stunden und Tagesarbeitszeit.
+                  'zaehlt_nicht'       => (int)($row['zaehlt_nicht'] ?? 0),
                   'raeume'             => $raeumeByTermin[$tid] ?? [],
                   // Das Bearbeiten-Modal arbeitet mit reinen IDs (wie im
                   // Lehrerstundenplan). Ohne dieses Feld stand raum_ids im

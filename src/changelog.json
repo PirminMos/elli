@@ -1,8 +1,13 @@
 {
-  "generated": "2026-09-06",
+  "generated": "2026-09-08",
   "commits": [
     {
-      "hash": "1c29180",
+      "hash": "db6569f",
+      "date": "2026-09-08",
+      "subject": "Feature: Zeitblocker im Dienstplan (Mittagspause)"
+    },
+    {
+      "hash": "34b14fb",
       "date": "2026-09-06",
       "subject": "Feature: Schuelerstundenplan - Kopfbereich und Abstaende"
     },
@@ -495,11 +500,6 @@
       "hash": "e9c2824",
       "date": "2026-07-14",
       "subject": "Feature: post-merge Git-Hook baut Stack nach jedem git pull automatisch neu"
-    },
-    {
-      "hash": "bebaac2",
-      "date": "2026-07-14",
-      "subject": "Fix: save_zweitkraft robust gegen fehlende Felder (Quick-Add)"
     }
   ]
 }
