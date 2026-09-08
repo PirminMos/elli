@@ -2,7 +2,12 @@
   "generated": "2026-09-08",
   "commits": [
     {
-      "hash": "26e02b2",
+      "hash": "7bc122f",
+      "date": "2026-09-08",
+      "subject": "Feature: Stapel-Export der Plaene als ZIP"
+    },
+    {
+      "hash": "da35665",
       "date": "2026-09-08",
       "subject": "Fix: Dienstplan nach dem Einspielen einer aelteren Sicherung"
     },
@@ -495,11 +500,6 @@
       "hash": "3067999",
       "date": "2026-07-14",
       "subject": "Feature: Backup-/Restore-Skripte fuer DB-Umzug auf anderen Server"
-    },
-    {
-      "hash": "f2b57ce",
-      "date": "2026-07-14",
-      "subject": "UI: native confirm/alert und Select durch elli-Design ersetzen"
     }
   ]
 }

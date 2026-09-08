@@ -1143,6 +1143,153 @@ if ($action === 'create_backup') {
     exit;
 }
 
+// --- Stapel-Export: mehrere Plaene als ZIP ----------------------------
+//
+// Die vier Einzel-Exporte schreiben ihre Datei mit readfile() heraus und
+// beenden den Request. Mehrere davon in EINEM Durchlauf zu erzeugen ginge
+// nur, wenn man sie in Funktionen umbaut - ein grosser Eingriff in vier
+// gewachsene, funktionierende Bloecke.
+//
+// Stattdessen ruft der Server hier seine eigenen Endpunkte ueber
+// 127.0.0.1 auf und packt die Antworten in ein ZIP. Die vorhandenen
+// Exporte bleiben damit unangetastet, und jeder Plan liegt im Archiv als
+// eigenstaendige .docx.
+if ($action === 'export_stapel') {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['success' => false, 'error' => 'Nur POST erlaubt.']);
+        exit;
+    }
+
+    $body = json_decode(file_get_contents('php://input'), true) ?: [];
+    $typ  = (string)($body['typ'] ?? '');
+    $ids  = array_values(array_filter(array_map('intval', (array)($body['ids'] ?? []))));
+    $sid  = (int)($body['schuljahr_id'] ?? 0);
+
+    // Je Plantyp: Ziel-Aktion, Name des ID-Parameters, ob das Schuljahr
+    // mitgegeben werden muss, und wie das Archiv heissen soll.
+    $typen = [
+        'schuelerstundenplan' => ['export_schuelerstundenplan', 'klasseId',      false, 'Schuelerstundenplaene'],
+        'lehrerstundenplan'   => ['export_lehrerstundenplan',   'erstkraft_id',  true,  'Lehrerstundenplaene'],
+        'diensteinsatzplan'   => ['export_diensteinsatzplan',   'zweitkraft_id', true,  'Diensteinsatzplaene'],
+        'raumbelegungsplan'   => ['export_raumbelegungsplan',   'raumId',        false, 'Raumbelegungsplaene'],
+    ];
+
+    if (!isset($typen[$typ])) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Unbekannter Plantyp: ' . $typ]);
+        exit;
+    }
+    if (!$ids) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Es wurde kein Plan ausgewaehlt.']);
+        exit;
+    }
+
+    [$zielAktion, $idParam, $brauchtSchuljahr, $archivName] = $typen[$typ];
+
+    if ($brauchtSchuljahr && !$sid) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Schuljahr-ID fehlt.']);
+        exit;
+    }
+
+    $zipPfad = tempnam(sys_get_temp_dir(), 'stapel');
+    $zip = new ZipArchive();
+    if ($zip->open($zipPfad, ZipArchive::OVERWRITE) !== true) {
+        @unlink($zipPfad);
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Archiv konnte nicht angelegt werden.']);
+        exit;
+    }
+
+    $fehler   = [];
+    $vergeben = [];   // Dateinamen im Archiv, gegen Dubletten
+    $anzahl   = 0;
+
+    foreach ($ids as $id) {
+        $params = ['action' => $zielAktion, $idParam => $id];
+        if ($brauchtSchuljahr) $params['schuljahr_id'] = $sid;
+        // Raumbelegungsplaene im Stapel immer mit Standard-Zeitraster - auf
+        // der Uebersichtsseite gibt es den Haken aus dem Editor nicht.
+        if ($typ === 'raumbelegungsplan') $params['standardRaster'] = 1;
+
+        $url = 'http://127.0.0.1/api.php?' . http_build_query($params);
+
+        $http_response_header = [];
+        $inhalt = @file_get_contents($url, false, stream_context_create([
+            'http' => ['timeout' => 120, 'ignore_errors' => true],
+        ]));
+
+        if ($inhalt === false || $inhalt === '') {
+            $fehler[] = "ID $id: keine Antwort vom Export.";
+            continue;
+        }
+        // Fehlerfall: die Einzel-Exporte antworten dann mit JSON statt docx.
+        if (substr($inhalt, 0, 2) === 'PK') {
+            // docx ist ein ZIP und beginnt mit "PK" - sieht nach einer Datei aus.
+        } else {
+            $j = json_decode($inhalt, true);
+            $fehler[] = "ID $id: " . (is_array($j) ? ($j['message'] ?? $j['error'] ?? 'Export fehlgeschlagen.') : 'Unerwartete Antwort.');
+            continue;
+        }
+
+        // Dateinamen aus dem Content-Disposition der Antwort uebernehmen,
+        // damit die Datei im Archiv so heisst wie beim Einzel-Export.
+        $name = '';
+        foreach ($http_response_header as $h) {
+            if (preg_match('/filename="([^"]+)"/i', $h, $m)) { $name = $m[1]; break; }
+        }
+        if ($name === '') $name = $archivName . '_' . $id . '.docx';
+
+        // Dubletten (zwei gleichnamige Klassen) durchnummerieren
+        $basis = $name;
+        $n = 2;
+        while (isset($vergeben[$name])) {
+            $name = preg_replace('/\.docx$/i', '', $basis) . '_' . $n . '.docx';
+            $n++;
+        }
+        $vergeben[$name] = true;
+
+        $zip->addFromString($name, $inhalt);
+        $anzahl++;
+    }
+
+    // Was nicht geklappt hat, kommt als Textdatei mit ins Archiv - sonst
+    // faellt ein fehlender Plan im Stapel gar nicht auf.
+    if ($fehler) {
+        $zip->addFromString(
+            '_Nicht-exportiert.txt',
+            "Diese Plaene konnten nicht erzeugt werden:\r\n\r\n- " . implode("\r\n- ", $fehler) . "\r\n"
+        );
+    }
+    $zip->close();
+
+    if ($anzahl === 0) {
+        @unlink($zipPfad);
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error'   => 'Kein einziger Plan liess sich erzeugen.',
+            'details' => $fehler,
+        ]);
+        exit;
+    }
+
+    $dateiname = $archivName . '_' . date('Y-m-d') . '.zip';
+    if (ob_get_level()) ob_end_clean();
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $dateiname . '"');
+    header('Content-Length: ' . filesize($zipPfad));
+    // Anzahl und Fehler zusaetzlich im Kopf, damit das Frontend eine
+    // Rueckmeldung geben kann, ohne ins Archiv zu schauen.
+    header('X-Elli-Anzahl: ' . $anzahl);
+    header('X-Elli-Fehler: ' . count($fehler));
+    readfile($zipPfad);
+    unlink($zipPfad);
+    exit;
+}
+
 if ($action === 'get_schuljahre') {
     try {
         elli_ensure_schule_columns($conn);

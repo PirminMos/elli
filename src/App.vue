@@ -11,6 +11,26 @@
         </div>
       </div>
       <div class="header-right">
+        <!-- Stapel-Export: nur auf den Uebersichtsseiten der vier Plantypen.
+             Erst auswaehlen, dann alles Gewaehlte als ZIP herunterladen. -->
+        <template v-if="view === 'list' && istPlanKategorie">
+          <button v-if="!stapel.aktiv" class="glass-btn-export" @click="stapelStarten">
+            <span class="export-icon">📄</span> Export
+          </button>
+          <template v-else>
+            <button class="glass-btn-export" :disabled="stapel.laeuft" @click="stapelAlleUmschalten">
+              {{ stapelAlleGewaehlt ? 'Keinen' : 'Alle' }}
+            </button>
+            <button class="glass-btn-export ist-primaer"
+                    :disabled="!stapel.ids.length || stapel.laeuft"
+                    @click="stapelExportieren">
+              {{ stapel.laeuft ? 'Wird erstellt …' : stapel.ids.length + ' exportieren' }}
+            </button>
+            <button class="glass-btn-export" :disabled="stapel.laeuft" @click="stapelAbbrechen">
+              Abbrechen
+            </button>
+          </template>
+        </template>
         <button v-if="view !== 'home'" class="back-circle" @click="goBack">
           <span class="arrow">&lt;</span>
         </button>
@@ -191,9 +211,12 @@
               v-for="item in currentItems"
               :key="item.id || item.name"
               class="glass-btn btn-accent item-button"
-              @click="editItem(item)"
+              :class="{ 'stapel-gewaehlt': stapel.aktiv && stapelEnthalten(item) }"
+              @click="stapel.aktiv ? stapelUmschalten(item) : editItem(item)"
               :style="{ background: activeCategory === 'schulfach' ? item.farbe : null }"
           >
+            <span v-if="stapel.aktiv" class="stapel-haken"
+                  :class="{ 'ist-an': stapelEnthalten(item) }"></span>
             <span class="button-content-wrapper">
               <span class="item-name">{{ item.name }}</span>
               <small v-if="istAktivitaetsKategorie" class="item-type">
@@ -2696,6 +2719,12 @@ select:focus {
 
 .header-right {
   pointer-events: auto;
+  /* Waagerecht, damit die Export-Knoepfe neben dem Zurueck-Kreis stehen
+     und nicht darueber. */
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .back-circle {
@@ -5331,6 +5360,105 @@ input:checked + .slider:before {
   cursor: help;
 }
 
+/* Stapel-Export: Knoepfe oben rechts, weiss/dunkelgrau im Glas-Design */
+.glass-btn-export {
+  /* Flex, damit Symbol und Beschriftung sauber auf einer Mittellinie
+     sitzen - ohne vertical-align-Gefrickel am Symbol. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.glass-btn-export:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* Der eigentliche Auslöser hebt sich als heller Block ab */
+.glass-btn-export.ist-primaer {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(255, 255, 255, 0.9);
+  color: #2b2b2b;
+  font-weight: 600;
+}
+
+.glass-btn-export.ist-primaer:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.glass-btn-export:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Das Export-Symbol: nur das Blatt Papier, ohne Plättchen darum. Entfärbt
+   und aufgehellt, damit es zum weiß-grauen Glas passt statt als buntes
+   Emoji aufzufallen. Die senkrechte Ausrichtung macht der Knopf selbst
+   (display:flex, align-items:center) - deshalb hier kein vertical-align. */
+.export-icon {
+  display: block;
+  font-size: 15px;
+  line-height: 1;
+  filter: grayscale(1) brightness(1.9);
+}
+
+/* Auswahlkreis auf der Karte im Auswahlmodus.
+   Als Element gezeichnet statt als Schriftzeichen (☐/☑): Nur so laesst
+   sich die Groesse frei bestimmen und der Kreis senkrecht mittig setzen -
+   Zeichen haengen an der Schriftlinie. */
+.stapel-haken {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  background: rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.stapel-haken.ist-an {
+  background: #ffffff;
+  border-color: #ffffff;
+}
+
+/* Haken im gefuellten Kreis */
+.stapel-haken.ist-an::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  color: #1d6b3c;
+}
+
+.item-button.stapel-gewaehlt {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  outline-offset: -2px;
+}
+
 /* Diensteinsatzplan: Stundentafel nach Einsatzort gruppiert */
 .ort-gruppe + .ort-gruppe {
   margin-top: 10px;
@@ -6183,6 +6311,12 @@ export default {
       onboardingSaving: false,
       // Erststart: 'neu' = Schuljahr anlegen, 'import' = Backup einspielen
       onboardingView: 'neu',
+      // Stapel-Export auf den Uebersichtsseiten der Plantypen.
+      stapel: {
+        aktiv: false,   // Auswahlmodus an?
+        ids: [],        // gewaehlte Plaene
+        laeuft: false,  // Archiv wird gerade erzeugt
+      },
       // Raumbelegungsplan-Export: angehakt = Standard-Zeitraster (Vorgabe).
       // Bewusst nicht gespeichert - beim Neuladen steht der Haken wieder.
       standardRasterImExport: true,
@@ -6313,6 +6447,15 @@ export default {
     }
   },
   computed: {
+    // Uebersichtsseiten, auf denen sich ein Stapel exportieren laesst.
+    istPlanKategorie() {
+      return ['schuelerstundenplan', 'lehrerstundenplan',
+              'diensteinsatzplan', 'raumbelegungsplan'].includes(this.activeCategory);
+    },
+    stapelAlleGewaehlt() {
+      const items = this.currentItems || [];
+      return items.length > 0 && this.stapel.ids.length === items.length;
+    },
     // Eingespielt werden kann nur, wenn genau eine Quelle feststeht.
     backupImportBereit() {
       return !!(this.backupImport.datei || this.backupImport.auswahl);
@@ -6737,7 +6880,7 @@ export default {
       // wirkungslos.
       const ensureRow = (name, einsatzort, id) => {
         const anzeige = (name && String(name).trim()) ? name : ortLabel(einsatzort);
-        const key = anzeige + ' ' + ortLabel(einsatzort);
+        const key = JSON.stringify([anzeige, ortLabel(einsatzort)]);
         if (!rows[key]) {
           rows[key] = { name: anzeige, aktivitaet_id: id ?? null, einsatzort: einsatzort || null, ist: 0 };
         }
@@ -7170,6 +7313,84 @@ export default {
       this.dialog._resolve = null;
       if (r) r(result);
     },
+    // --- Stapel-Export der Plan-Uebersichten -------------------------
+    stapelStarten() {
+      this.stapel.aktiv = true;
+      this.stapel.ids = [];
+      this.showStatus('Pläne auswählen, dann oben rechts exportieren');
+    },
+    stapelAbbrechen() {
+      this.stapel.aktiv = false;
+      this.stapel.ids = [];
+    },
+    stapelEnthalten(item) {
+      return this.stapel.ids.includes(item.id);
+    },
+    stapelUmschalten(item) {
+      const i = this.stapel.ids.indexOf(item.id);
+      if (i === -1) this.stapel.ids.push(item.id);
+      else this.stapel.ids.splice(i, 1);
+    },
+    stapelAlleUmschalten() {
+      this.stapel.ids = this.stapelAlleGewaehlt ? [] : (this.currentItems || []).map(i => i.id);
+    },
+
+    // Holt das ZIP als Blob statt per window.open: So laesst sich ein
+    // Fehler (der Server antwortet dann mit JSON) noch abfangen und
+    // anzeigen, statt dem Nutzer eine kaputte Datei unterzuschieben.
+    async stapelExportieren() {
+      if (this.stapel.laeuft || !this.stapel.ids.length) return;
+      this.stapel.laeuft = true;
+      try {
+        const response = await fetch(`${API_URL}?action=export_stapel`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            typ: this.activeCategory,
+            ids: this.stapel.ids,
+            schuljahr_id: this.currentSchuljahrId,
+          })
+        });
+
+        if (!response.ok) {
+          const fehler = await response.json().catch(() => ({}));
+          throw new Error(fehler.error || 'Der Export ist fehlgeschlagen.');
+        }
+
+        const anzahl = Number(response.headers.get('X-Elli-Anzahl') || 0);
+        const fehlend = Number(response.headers.get('X-Elli-Fehler') || 0);
+
+        // Dateinamen aus dem Content-Disposition uebernehmen
+        const cd = response.headers.get('Content-Disposition') || '';
+        const treffer = /filename="([^"]+)"/i.exec(cd);
+        const name = treffer ? treffer[1] : 'Plaene.zip';
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        this.stapelAbbrechen();
+        this.showStatus(
+          fehlend
+            ? `${anzahl} Pläne exportiert, ${fehlend} nicht – siehe _Nicht-exportiert.txt im Archiv.`
+            : `${anzahl} Pläne als ZIP exportiert.`,
+          fehlend ? 'error' : 'success',
+          fehlend ? 8000 : 3000
+        );
+      } catch (e) {
+        console.error('Stapel-Export fehlgeschlagen:', e);
+        this.showStatus('Export fehlgeschlagen: ' + e.message, 'error', 6000);
+      } finally {
+        this.stapel.laeuft = false;
+      }
+    },
+
     // Legt sofort eine Sicherung des aktuellen Standes an. Der
     // Backup-Container macht das ohnehin taeglich - vor einem Umzug will
     // man aber den Stand von jetzt, nicht den von heute Nacht.
@@ -10339,7 +10560,12 @@ export default {
         this.editingFach.benoetigte_raeume.push(raumId);
       }
     },
+    // Der Auswahlmodus gilt immer nur fuer die gerade offene Uebersicht.
+    beendeStapelAuswahl() {
+      if (this.stapel.aktiv) this.stapelAbbrechen();
+    },
     async goBack() {
+      this.beendeStapelAuswahl();
       // Meldung sofort wegnehmen - noch vor der Rueckfrage zu ungespeicherten
       // Aenderungen, damit der Klick auf Zurueck den Hinweis in jedem Fall
       // beendet. Gilt fuer den Zurueck-Knopf wie fuer den Browser-Zurueck.
