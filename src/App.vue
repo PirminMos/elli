@@ -1410,7 +1410,7 @@ Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als le
             <h3>Stundentafel in h</h3>
             <br>
             <div class="tafel-meta">
-              <span>Aktivität</span>
+              <span>Einsatzort</span>
               <div class="badges">
                 <label>Ist / Soll</label>
               </div>
@@ -1418,22 +1418,32 @@ Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als le
           </div>
 
           <div class="stundentafel-list">
-            <div v-for="item in dynamicDiensteinsatztafel" :key="item.name" class="tafel-card">
+            <!-- Je Einsatzort eine Gruppe: oben sein Budget (Ist/Soll),
+                 darunter die Aktivitäten mit ihren eigenen IST-Stunden. -->
+            <div v-for="gruppe in diensttafelNachEinsatzort" :key="gruppe.einsatzort" class="tafel-card ort-gruppe">
               <div class="tafel-meta">
-                <div class="tafel-header-row dienst-tafel-row" :data-tooltip="item.tooltip">
-                  <span class="fach-title">{{ item.name }}</span>
+                <div class="tafel-header-row dienst-tafel-row"
+                     :data-tooltip="`${gruppe.einsatzort}: ${gruppe.ist} von ${gruppe.soll} Stunden verplant.`">
+                  <span class="fach-title">{{ gruppe.einsatzort }}</span>
                   <div class="badges">
-                    <div class="fach-stats-badge" :style="{ backgroundColor: dienstBadgeColor(item.ist, item.soll) }">
-                      <span class="ist-val">{{ item.ist }}</span>
+                    <div class="fach-stats-badge" :style="{ backgroundColor: dienstBadgeColor(gruppe.ist, gruppe.soll) }">
+                      <span class="ist-val">{{ gruppe.ist }}</span>
                       <span class="sep">/</span>
-                      <span class="soll-val">{{ item.soll }}</span>
+                      <span class="soll-val">{{ gruppe.soll }}</span>
                     </div>
                   </div>
                 </div>
               </div>
+
+              <div class="ort-aktivitaeten">
+                <div v-for="a in gruppe.aktivitaeten" :key="a.name" class="ort-aktivitaet">
+                  <span class="ort-aktivitaet-name">{{ a.name }}</span>
+                  <span class="ort-aktivitaet-ist">{{ a.ist }} h</span>
+                </div>
+              </div>
             </div>
 
-            <div class="total-stats-footer glass" v-if="dynamicDiensteinsatztafel.length > 0">
+            <div class="total-stats-footer glass" v-if="diensttafelNachEinsatzort.length > 0">
               <div class="stats-header">
                 <span class="stats-label">Gesamt</span>
                 <div class="stats-badges">
@@ -5321,6 +5331,39 @@ input:checked + .slider:before {
   cursor: help;
 }
 
+/* Diensteinsatzplan: Stundentafel nach Einsatzort gruppiert */
+.ort-gruppe + .ort-gruppe {
+  margin-top: 10px;
+}
+
+.ort-aktivitaeten {
+  margin: 6px 0 2px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+.ort-aktivitaet {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ort-aktivitaet-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ort-aktivitaet-ist {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.5);
+}
+
 /* Zeitblocker (Mittagspause) in der Werkzeugleiste des Dienstplans */
 .draggable-subject-activity.is-blocker {
   background: linear-gradient(135deg, #f7971e 0%, #f45b69 30%, #a24bcf 60%, #2c73d2 85%, #00c9a7 100%);
@@ -6616,6 +6659,50 @@ export default {
         };
       });
     },
+    // Stundentafel des Diensteinsatzplans, nach Einsatzort gruppiert.
+    //
+    // Das SOLL ist ein Budget des Einsatzorts, nicht der einzelnen Aktivitaet.
+    // In der flachen Liste stand deshalb bei jeder Aktivitaet desselben Ortes
+    // dieselbe SOLL-Zahl - drei Zeilen "…/18,75" sahen aus wie dreimal 18,75
+    // Stunden Soll. Gruppiert steht das Budget einmal ueber der Gruppe, und
+    // darunter zeigt jede Aktivitaet nur noch ihre eigenen IST-Stunden.
+    //
+    // "Ohne Einsatzort" kommt ans Ende: dort landet, was keinem Ort zugeordnet
+    // ist, und dafuer gibt es auch kein Budget.
+    diensttafelNachEinsatzort() {
+      const sollMap = this.sollByEinsatzort;
+      const OHNE = 'Ohne Einsatzort';
+      const gruppen = {};
+
+      // Zuerst jeden Einsatzort anlegen, fuer den ein Budget hinterlegt ist -
+      // auch ohne geplante Aktivitaet. Sonst waere ein Ort mit offenen
+      // Stunden unsichtbar, obwohl die Gesamtsumme unten sein Budget
+      // mitzaehlt: Die Gruppen ergaeben dann weniger als die Summe.
+      Object.keys(sollMap).forEach(ort => {
+        gruppen[ort] = {einsatzort: ort, soll: Math.round(sollMap[ort] * 100) / 100, ist: 0, aktivitaeten: []};
+      });
+
+      this.dynamicDiensteinsatztafel.forEach(r => {
+        const ort = (r.einsatzort && String(r.einsatzort).trim()) ? r.einsatzort : OHNE;
+        if (!gruppen[ort]) {
+          gruppen[ort] = {einsatzort: ort, soll: Math.round((sollMap[ort] || 0) * 100) / 100, ist: 0, aktivitaeten: []};
+        }
+        gruppen[ort].ist += r.ist;
+        gruppen[ort].aktivitaeten.push({name: r.name, ist: r.ist});
+      });
+
+      return Object.values(gruppen)
+          .map(g => ({
+            ...g,
+            ist: Math.round(g.ist * 100) / 100,
+            aktivitaeten: g.aktivitaeten.sort((a, b) => a.name.localeCompare(b.name)),
+          }))
+          .sort((a, b) => {
+            if (a.einsatzort === OHNE) return 1;
+            if (b.einsatzort === OHNE) return -1;
+            return a.einsatzort.localeCompare(b.einsatzort);
+          });
+    },
     // SOLL-Stunden je Einsatzort aufsummiert (Budget des Einsatzorts).
     sollByEinsatzort() {
       const sollListe = (this.currentDiensteinsatzplan || {}).stundentafel || [];
@@ -6626,10 +6713,13 @@ export default {
       });
       return map;
     },
-    // Diensteinsatzplan-Stundentafel: flache Liste je Aktivität (wie die
-    // Lehrertafel). Es gibt KEINE reinen Einsatzort-Zeilen mehr – das SOLL-Budget
-    // des Einsatzorts wird als SOLL der Aktivität(en) dieses Einsatzorts gezeigt.
-    // IST kommt aus den Terminen; der Hover-Tooltip schlüsselt es auf.
+    // Diensteinsatzplan-Stundentafel: flache Liste je Aktivität, mit dem
+    // SOLL-Budget ihres Einsatzorts. IST kommt aus den Terminen; der
+    // Hover-Tooltip schlüsselt es auf.
+    //
+    // Angezeigt wird nicht diese Liste, sondern die daraus gruppierte
+    // diensttafelNachEinsatzort. Diese hier bleibt die Grundlage dafür und
+    // liefert ausserdem totalIst_Dienst.
     dynamicDiensteinsatztafel() {
       const plan = this.currentDiensteinsatzplan || {};
       const sollListe = plan.stundentafel || [];
@@ -6639,12 +6729,17 @@ export default {
       const round = (n) => Math.round(n * 100) / 100;
       const ortLabel = (ort) => (ort && String(ort).trim()) ? ort : 'Ohne Einsatzort';
 
+      // Schluessel aus Name UND Einsatzort: Dieselbe Aktivitaet kann an
+      // mehreren Einsatzorten stattfinden (z.B. "GSa" in Schule und
+      // Tagesstaette). Nur nach dem Namen geschluesselt waeren beide zu einer
+      // Zeile verschmolzen, mit addierten Stunden und dem Einsatzort dessen,
+      // was zufaellig zuerst kam - und die Aufteilung nach Einsatzort waere
+      // wirkungslos.
       const ensureRow = (name, einsatzort, id) => {
-        const key = (name && String(name).trim()) ? name : ortLabel(einsatzort);
+        const anzeige = (name && String(name).trim()) ? name : ortLabel(einsatzort);
+        const key = anzeige + ' ' + ortLabel(einsatzort);
         if (!rows[key]) {
-          rows[key] = { name: key, aktivitaet_id: id ?? null, einsatzort: einsatzort || null, ist: 0 };
-        } else if (!rows[key].einsatzort && einsatzort) {
-          rows[key].einsatzort = einsatzort;
+          rows[key] = { name: anzeige, aktivitaet_id: id ?? null, einsatzort: einsatzort || null, ist: 0 };
         }
         return rows[key];
       };
