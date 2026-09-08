@@ -2,7 +2,12 @@
   "generated": "2026-09-08",
   "commits": [
     {
-      "hash": "7d17272",
+      "hash": "26e02b2",
+      "date": "2026-09-08",
+      "subject": "Fix: Dienstplan nach dem Einspielen einer aelteren Sicherung"
+    },
+    {
+      "hash": "e582531",
       "date": "2026-09-08",
       "subject": "Feature: Diensteinsatzplan-Stundentafel nach Einsatzort gegliedert"
     },
@@ -495,11 +500,6 @@
       "hash": "f2b57ce",
       "date": "2026-07-14",
       "subject": "UI: native confirm/alert und Select durch elli-Design ersetzen"
-    },
-    {
-      "hash": "2f77639",
-      "date": "2026-07-14",
-      "subject": "Feature: Basisdaten beim Schuljahrwechsel aus dem Vorjahr uebernehmen"
     }
   ]
 }

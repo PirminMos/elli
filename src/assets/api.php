@@ -352,6 +352,29 @@ function elli_ensure_aktivitaet_zaehlt_nicht(PDO $conn) {
         ADD COLUMN zaehlt_nicht TINYINT(1) NOT NULL DEFAULT 0");
 }
 
+/**
+ * Fuehrt alle Schema-Selbstheilungen aus.
+ *
+ * Gedacht fuer den Backup-Import: Der spielt einen Dump ein, der die Tabellen
+ * per DROP/CREATE in dem Zustand neu anlegt, den sie zum Zeitpunkt der
+ * Sicherung hatten. Eine Sicherung von vor einer Schemaerweiterung nimmt die
+ * neuere Spalte damit wieder WEG - die Anwendung liefe danach gegen ein
+ * veraltetes Schema und faende Spalten nicht mehr.
+ *
+ * Alle einzelnen Funktionen pruefen selbst, ob etwas zu tun ist, und sind
+ * beliebig oft aufrufbar.
+ */
+function elli_ensure_schema(PDO $conn) {
+    elli_ensure_schule_columns($conn);
+    elli_ensure_zweitkraft_stundentafel_columns($conn);
+    elli_ensure_dezimal_stunden($conn);
+    elli_ensure_aktivitaet_kraft_typ($conn);
+    elli_ensure_aktivitaet_zaehlt_nicht($conn);
+    elli_ensure_zweitkraft_columns($conn);
+    elli_ensure_template_tables($conn);
+    elli_ensure_gesamtplan_tabellen($conn);
+}
+
 // Selbstheilung: Zweit-/Drittberuf und Geschlechts-Flag der Zweitkraft.
 // typ2/typ3 halten die kanonische (weibliche) Berufsbezeichnung; maennlich
 // steuert nur die Anzeige (Opt-In auf die maennliche Form).
@@ -884,6 +907,22 @@ if ($action === 'import_backup') {
 
         $start  = microtime(true);
         $report = elli_import_sql($conn, $sql);
+
+        // Der Dump hat die Tabellen in dem Zustand neu angelegt, den sie zum
+        // Zeitpunkt der Sicherung hatten. Stammt sie von vor einer
+        // Schemaerweiterung, fehlen jetzt neuere Spalten. Deshalb hier alle
+        // Selbstheilungen nachziehen - sonst laeuft die Anwendung nach einem
+        // Umzug gegen ein veraltetes Schema.
+        $schemaHinweis = '';
+        try {
+            elli_ensure_schema($conn);
+        } catch (Throwable $e) {
+            // Die Daten sind bereits drin; ein Fehler beim Nachziehen darf den
+            // Import nicht als gescheitert erscheinen lassen. Er wird gemeldet.
+            $schemaHinweis = 'Die Daten wurden eingespielt, aber das Schema konnte nicht '
+                . 'vollstaendig nachgezogen werden: ' . $e->getMessage();
+        }
+
         $dauer  = round((microtime(true) - $start) * 1000);
 
         $anzahlSchuljahre = 0;
@@ -898,6 +937,7 @@ if ($action === 'import_backup') {
             'tabellen'   => count($report['tabellen']),
             'schuljahre' => $anzahlSchuljahre,
             'dauer_ms'   => $dauer,
+            'hinweis'    => $schemaHinweis,
         ]);
     } catch (Throwable $e) {
         http_response_code(400);
@@ -1195,6 +1235,10 @@ if ($action === 'copy_schuljahr_data') {
         echo json_encode(['success' => false, 'error' => 'Ungueltige Schuljahr-IDs']);
         exit;
     }
+
+    // Die Kopie listet die Spalten der Aktivitaeten einzeln auf, darunter
+    // zaehlt_nicht. Fehlt sie, schluege das Kopieren fehl.
+    elli_ensure_aktivitaet_zaehlt_nicht($conn);
     try {
         $conn->beginTransaction();
 
@@ -4634,6 +4678,9 @@ if ($action === 'get_raum_verfuegbarkeit') {
       $schuljahr_id  = isset($_GET['schuljahr_id']) ? (int)$_GET['schuljahr_id'] : 0;
       $zweitkraft_id = isset($_GET['zweitkraft_id']) ? (int)$_GET['zweitkraft_id'] : 0;
 
+      // Wie beim Anzeigen: Die Termin-Abfrage liest a.zaehlt_nicht.
+      elli_ensure_aktivitaet_zaehlt_nicht($conn);
+
       if (!$schuljahr_id || !$zweitkraft_id) {
           echo json_encode(["success" => false, "error" => "schuljahr_id und zweitkraft_id sind Pflicht"]);
           exit;
@@ -4887,6 +4934,11 @@ if ($action === 'get_raum_verfuegbarkeit') {
       // genau eine Zweitkraft gefiltert, sonst werden ALLE Zweitkräfte des Schuljahrs geladen.
       $schuljahr_id  = isset($_GET['schuljahr_id']) ? (int)$_GET['schuljahr_id'] : 0;
       $zweitkraft_id = isset($_GET['zweitkraft_id']) ? (int)$_GET['zweitkraft_id'] : 0;
+
+      // Die Abfrage unten liest a.zaehlt_nicht. Fehlt die Spalte - etwa nach
+      // dem Einspielen einer aelteren Sicherung -, bricht der Plan sonst mit
+      // "Unknown column" ab.
+      elli_ensure_aktivitaet_zaehlt_nicht($conn);
 
       if (!$schuljahr_id) {
           echo json_encode(["success" => false, "error" => "Schuljahr-ID fehlt"]);
