@@ -976,7 +976,7 @@
               </div>
 
               <div class="grid-body">
-                <div v-for="stunde in zeitRasterAnzeige" :key="stunde.id" class="grid-row">
+                <div v-for="(stunde, sIdx) in zeitRasterAnzeige" :key="stunde.id" class="grid-row">
 
                   <div class="time-label">
                     <div class="time-display" @click="editingId = stunde.id">
@@ -993,10 +993,13 @@
 
                   <div v-for="tag in days" :key="tag"
                        class="grid-cell drop-zone"
-                       :class="{ 'drag-over': dragOverCell === `${tag}-${stunde.id}` }"
+                       :class="{ 'drag-over': dragOverCell === `${tag}-${stunde.id}`,
+                                 'zelle-gewaehlt': zelleGewaehlt(tag, sIdx) }"
                        @dragover.prevent="dragOverCell = `${tag}-${stunde.id}`"
                        @dragleave="dragOverCell = null"
-                       @drop="handleDrop($event, tag, stunde)">
+                       @drop="handleDrop($event, tag, stunde)"
+                       @mousedown="auswahlStartZelle($event, tag, sIdx, zeitRasterAnzeige)"
+                       @mouseover="auswahlUeberZelle(tag, sIdx)">
 
                     <div class="chip-container">
                       <transition-group name="pop">
@@ -1225,7 +1228,11 @@ Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als le
                    :class="{ 'drag-over': dragOverCell === `${tag}` }"
                    @dragover.prevent="dragOverCell = `${tag}`"
                    @dragleave="dragOverCell = null"
-                   @drop="handleLehrerDrop($event, tag)">
+                   @drop="handleLehrerDrop($event, tag)"
+                   @mousedown.self="auswahlStart($event, tag)">
+
+                <div v-if="auswahl.aktiv && auswahl.tag === tag"
+                     class="auswahl-rechteck" :style="auswahlRechteckStil"></div>
 
                 <div
                     v-for="termin in currentLehrerstundenplan.termine.filter(t => t.tag === tag)"
@@ -1403,7 +1410,11 @@ Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als le
                    :class="{ 'drag-over': dragOverCell === `${tag}` }"
                    @dragover.prevent="dragOverCell = `${tag}`"
                    @dragleave="dragOverCell = null"
-                   @drop="handleLehrerDrop($event, tag)">
+                   @drop="handleLehrerDrop($event, tag)"
+                   @mousedown.self="auswahlStart($event, tag)">
+
+                <div v-if="auswahl.aktiv && auswahl.tag === tag"
+                     class="auswahl-rechteck" :style="auswahlRechteckStil"></div>
 
                 <div
                     v-for="termin in (currentDiensteinsatzplan.termine || []).filter(t => t.tag === tag)"
@@ -1631,7 +1642,12 @@ Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als le
           <div class="modal-content glass staff-selection-modal">
             <div class="modal-header">
               <h2>Erstkraft auswählen</h2>
-              <p class="subtitle">{{ pendingAssignment?.fachName }} am {{ pendingAssignment?.tag }}</p>
+              <p class="subtitle">
+                {{ pendingAssignment?.fachName }} am {{ pendingAssignment?.tag }}
+                <template v-if="mehrfachSchueler && mehrfachSchueler.length > 1">
+                  – {{ mehrfachSchueler.length }} Stunden
+                </template>
+              </p>
             </div>
 
             <div class="staff-grid-container">
@@ -2221,10 +2237,15 @@ Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als le
                 <input type="range" min="1" max="10" step="1"
                        v-model.number="stundenAuswahl"
                        @input="updateTimeFromUnits"
+                       :disabled="stundenzahlGesperrt"
                        class="custom-slider">
                 <div class="slider-labels">
                   <span>1</span><span>5</span><span>10</span>
                 </div>
+                <small v-if="stundenzahlGesperrt" class="modal-hint">
+                  Die gewählten Stunden hängen nicht zusammen – sie behalten
+                  ihre Zeiten. Geändert werden nur die übrigen Felder.
+                </small>
               </div>
             </transition>
           </div>
@@ -4107,6 +4128,24 @@ input:checked + .slider:before {
 .glass-btn-cancel:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Zellen, die beim Aufziehen im Schuelerstundenplan getroffen werden */
+.grid-cell.zelle-gewaehlt {
+  background: rgba(35, 164, 74, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(35, 164, 74, 0.7);
+}
+
+/* Rechteck beim Aufziehen mehrerer Stunden in einer Tagesspalte */
+.auswahl-rechteck {
+  position: absolute;
+  left: 5%;
+  width: 90%;
+  border: 1px dashed rgba(35, 164, 74, 0.9);
+  background: rgba(35, 164, 74, 0.18);
+  border-radius: 6px;
+  pointer-events: none;   /* darf die Maus nicht abfangen */
+  z-index: 50;
 }
 
 /* Erklaerender Kleintext direkt unter einem Eingabefeld im Editor */
@@ -6366,6 +6405,14 @@ export default {
       // Zuletzt gerechneter Vorschlag, um beim Speichern zu erkennen, ob der
       // Nutzer wirklich abgewichen ist (s. saveErstkraft).
       upzVorschlag: '',
+      // Aufziehen mit der Maus, um mehrere Stunden eines Tages zu waehlen.
+      // 'tag' ist zugleich die Anzeigebedingung fuer das Auswahlrechteck.
+      auswahl: {aktiv: false, tag: null, vonY: 0, bisY: 0, vonIdx: null, bisIdx: null},
+      // Ergebnis der Auswahl, solange das Bearbeitungsmodal offen ist:
+      // die betroffenen Termin-IDs und ob sie luecklos aufeinander folgen.
+      mehrfachAuswahl: null,
+      // Dasselbe fuer den Schuelerstundenplan: die uuids der gewaehlten Stunden.
+      mehrfachSchueler: null,
       currentZweitkraft: {
         id: null,
         schuljahr_id: this.currentSchuljahrId,
@@ -6867,6 +6914,17 @@ export default {
     // sie sich wie Schulfaecher verhalten (Slider, Aufteilung in UE). Im
     // Diensteinsatzplan bleiben Aktivitaeten bewusst frei in der Zeit, weil ein
     // Dienst nicht am Schulstundenraster haengt.
+    // Masse des Auswahlrechtecks waehrend des Aufziehens.
+    auswahlRechteckStil() {
+      const oben = Math.min(this.auswahl.vonY, this.auswahl.bisY);
+      const hoehe = Math.abs(this.auswahl.bisY - this.auswahl.vonY);
+      return {top: `${oben}px`, height: `${hoehe}px`};
+    },
+    // Bei einer Auswahl mit Luecke bleiben die Zeiten stehen - dann laesst sich
+    // die Stundenzahl nicht sinnvoll verstellen.
+    stundenzahlGesperrt() {
+      return !!this.mehrfachAuswahl && !this.mehrfachAuswahl.zusammenhaengend;
+    },
     sliderGilt() {
       const key = this.selectedUniqueKey || '';
       if (key.startsWith('f')) return true;
@@ -8697,6 +8755,34 @@ export default {
         }
       };
 
+      if (this.mehrfachSchueler && this.mehrfachSchueler.length > 1) {
+        // FALL: Mehrere ausgewaehlte Stunden bekommen dieselbe Erstkraft.
+        // Klassenverbund/Differenzierung haengt am jeweiligen Slot und wird
+        // deshalb je Stunde einzeln bestimmt statt aus terminDaten uebernommen.
+        const gewaehlt = this.mehrfachSchueler;
+        this.currentSchuelerStundenPlan.termine.forEach(t => {
+          if (!gewaehlt.includes(t.uuid)) return;
+          const diff = this.currentSchuelerStundenPlan.termine.some(
+              a => a.tag === t.tag && a.stunden_id === t.stunden_id && a.uuid !== t.uuid
+          );
+          const farbe = (t.display && t.display.farbe) || lehrer.farbe || '#e0e0e0';
+          Object.assign(t, {
+            erstkraft_id: lehrer.id,
+            farbe,
+            ist_klassenverbund: !diff,
+            ist_differenzierung: diff,
+            display: {...t.display, lehrerKuerzel: lehrer.kuerzel, farbe,
+                      typLabel: diff ? '(Diff)' : '(KV)'}
+          });
+        });
+        this.updateGridDisplay();
+        this.showLehrerModal = false;
+        this.pendingAssignment = null;
+        this.mehrfachSchueler = null;
+        this.showStatus(`${gewaehlt.length} Stunden auf ${lehrer.name} gesetzt`, 'success');
+        return;
+      }
+
       if (index !== -1) {
         // FALL: Bestehenden Termin aktualisieren
         Object.assign(this.currentSchuelerStundenPlan.termine[index], terminDaten);
@@ -8712,6 +8798,7 @@ export default {
       this.pendingAssignment = null;
     },
     editAssignment(termin) {
+      this.mehrfachSchueler = null;
       this.pendingAssignment = {...termin};
       this.showLehrerModal = true;
       this.personModalType = 'erstkraft';
@@ -8909,7 +8996,197 @@ export default {
           .map(r => Number(r && typeof r === 'object' ? r.id : r))
           .filter(id => id > 0);
     },
+    // --- Mehrfachauswahl per Aufziehen -------------------------------------
+    //
+    // Die Kacheln lassen sich weiterhin per Maus verschieben; das Aufziehen
+    // beginnt deshalb nur auf der freien Flaeche einer Tagesspalte
+    // (@mousedown.self). Waehrend des Ziehens haengen die Listener am Fenster,
+    // damit die Auswahl nicht abreisst, sobald der Zeiger ueber eine Kachel
+    // oder aus der Spalte wandert.
+    auswahlStart(ev, tag) {
+      if (ev.button !== 0) return;
+      const rect = ev.currentTarget.getBoundingClientRect();
+      this._auswahlSpalte = rect;
+      this.auswahl = {aktiv: true, tag, vonY: ev.clientY - rect.top, bisY: ev.clientY - rect.top,
+                      vonIdx: null, bisIdx: null};
+      window.addEventListener('mousemove', this.auswahlBewegen);
+      window.addEventListener('mouseup', this.auswahlEnde);
+      ev.preventDefault();   // sonst markiert der Browser Text
+    },
+    auswahlBewegen(ev) {
+      if (!this.auswahl.aktiv || !this._auswahlSpalte) return;
+      const r = this._auswahlSpalte;
+      this.auswahl.bisY = Math.max(0, Math.min(r.height, ev.clientY - r.top));
+    },
+    auswahlEnde() {
+      window.removeEventListener('mousemove', this.auswahlBewegen);
+      window.removeEventListener('mouseup', this.auswahlEnde);
+      const {aktiv, tag, vonY, bisY} = this.auswahl;
+      this.auswahl = {aktiv: false, tag: null, vonY: 0, bisY: 0, vonIdx: null, bisIdx: null};
+      if (!aktiv) return;
+      // Ein Klick ins Leere ist keine Auswahl.
+      if (Math.abs(bisY - vonY) < 8) return;
+
+      // Pixel zurueck in Uhrzeiten rechnen - dieselbe Skala wie in
+      // getTerminStyleExact (Plan beginnt um 07:00, 1,2 Pixel je Minute).
+      const vonMin = 7 * 60 + Math.min(vonY, bisY) / 1.2;
+      const bisMin = 7 * 60 + Math.max(vonY, bisY) / 1.2;
+
+      const plan = this.activeCategory === 'diensteinsatzplan'
+          ? this.currentDiensteinsatzplan : this.currentLehrerstundenplan;
+      const treffer = (plan.termine || []).filter(t =>
+          t.tag === tag &&
+          this.timeToMinutes(t.start) < bisMin &&
+          this.timeToMinutes(t.ende) > vonMin
+      );
+      if (treffer.length === 0) return;
+      if (treffer.length === 1) { this.editLehrerAssignment(treffer[0]); return; }
+      this.oeffneMehrfachBearbeitung(treffer);
+    },
+    // --- Mehrfachauswahl im Schuelerstundenplan ----------------------------
+    //
+    // Dort liegen die Stunden in Rasterzellen statt frei positioniert; gewaehlt
+    // wird deshalb ueber die Zellen einer Tagesspalte. Startet der Zug auf
+    // einer Kachel, bleibt es beim gewohnten Verschieben.
+    // Das Zeitraster kommt aus dem Template: es liegt im <script setup>-Block
+    // und ist ueber 'this' hier nicht erreichbar.
+    auswahlStartZelle(ev, tag, sIdx, raster) {
+      if (ev.button !== 0) return;
+      if (ev.target.closest('.subject-chip')) return;   // Kachel = verschieben
+      this._auswahlRaster = raster || [];
+      this.auswahl = {aktiv: true, tag, vonY: 0, bisY: 0, vonIdx: sIdx, bisIdx: sIdx};
+      window.addEventListener('mouseup', this.auswahlEndeZelle);
+      ev.preventDefault();
+    },
+    auswahlUeberZelle(tag, sIdx) {
+      if (!this.auswahl.aktiv || this.auswahl.vonIdx === null) return;
+      if (tag !== this.auswahl.tag) return;   // Auswahl bleibt in einer Spalte
+      this.auswahl.bisIdx = sIdx;
+    },
+    zelleGewaehlt(tag, sIdx) {
+      const a = this.auswahl;
+      if (!a.aktiv || a.vonIdx === null || a.tag !== tag) return false;
+      return sIdx >= Math.min(a.vonIdx, a.bisIdx) && sIdx <= Math.max(a.vonIdx, a.bisIdx);
+    },
+    auswahlEndeZelle() {
+      window.removeEventListener('mouseup', this.auswahlEndeZelle);
+      const {aktiv, tag, vonIdx, bisIdx} = this.auswahl;
+      this.auswahl = {aktiv: false, tag: null, vonY: 0, bisY: 0, vonIdx: null, bisIdx: null};
+      if (!aktiv || vonIdx === null) return;
+      if (vonIdx === bisIdx) return;   // eine Zelle ist keine Mehrfachauswahl
+
+      const von = Math.min(vonIdx, bisIdx), bis = Math.max(vonIdx, bisIdx);
+
+      // Belegte Zellen der Auswahl einsammeln; leere Zellen dazwischen sind
+      // erlaubt und werden einfach uebersprungen.
+      const proZelle = [];
+      for (let i = von; i <= bis; i++) {
+        const stunde = (this._auswahlRaster || [])[i];
+        const liste = stunde ? (this.getAssignment(tag, stunde) || []) : [];
+        if (liste.length) proZelle.push(liste);
+      }
+      if (proZelle.length === 0) return;
+      if (proZelle.length === 1 && proZelle[0].length === 1) {
+        this.editAssignment(proZelle[0][0]);
+        return;
+      }
+
+      // In einer Stunde koennen mehrere Faecher parallel liegen (Differen-
+      // zierung). Gesucht ist das eine Fach, das in ALLEN gewaehlten Stunden
+      // vorkommt - nur dann ist eindeutig, was bearbeitet werden soll.
+      const fach = (t) => String(t.schulfach_id ?? (t.display && t.display.fachName) ?? '');
+      let gemeinsam = [...new Set(proZelle[0].map(fach))];
+      for (const liste of proZelle.slice(1)) {
+        const hier = new Set(liste.map(fach));
+        gemeinsam = gemeinsam.filter(k => hier.has(k));
+      }
+      if (gemeinsam.length === 0) {
+        this.showStatus('Die gewählten Stunden haben kein gemeinsames Fach.', 'error');
+        return;
+      }
+      if (gemeinsam.length > 1) {
+        this.showStatus('Mehrere Fächer kommen in allen gewählten Stunden vor – bitte enger auswählen.', 'error');
+        return;
+      }
+
+      const treffer = proZelle.flat().filter(t => fach(t) === gemeinsam[0]);
+      if (treffer.length < 2) { this.editAssignment(treffer[0]); return; }
+
+      this.pendingAssignment = {...treffer[0]};
+      this.mehrfachSchueler = treffer.map(t => t.uuid);
+      this.showLehrerModal = true;
+      this.personModalType = 'erstkraft';
+    },
+    // Fach bzw. Aktivitaet einer Stunde als vergleichbare Kennung.
+    terminKennung(t) {
+      return t.aktivitaet_id ? 'a-' + t.aktivitaet_id : 'f-' + t.fach_id;
+    },
+    oeffneMehrfachBearbeitung(termine) {
+      const sortiert = [...termine].sort((a, b) => a.start.localeCompare(b.start));
+
+      // Nur Stunden desselben Fachs bzw. derselben Aktivitaet lassen sich
+      // gemeinsam bearbeiten - sonst waere unklar, was gespeichert wird.
+      const kennung = this.terminKennung(sortiert[0]);
+      if (sortiert.some(t => this.terminKennung(t) !== kennung)) {
+        this.showStatus('Nur Stunden desselben Fachs lassen sich zusammen bearbeiten.', 'error');
+        return;
+      }
+
+      // Folgen die Stunden aufeinander? Dann darf die Stundenzahl im Modal
+      // verstellt werden und die Auswahl wird beim Speichern als ein Block neu
+      // aufgebaut. Sonst behaelt jede Stunde ihre Zeit, geaendert werden nur
+      // die uebrigen Felder.
+      //
+      // Massstab sind Schulstunden, nicht Uhrzeiten: Zwischen zwei
+      // aufeinanderfolgenden Stunden liegt in der Regel eine Pause. Als Luecke
+      // zaehlt nur, wenn dazwischen eine ganze Rasterstunde Platz haette.
+      const klassenId = sortiert.map(t => t.klassen_id).find(id => id);
+      const raster = klassenId ? this.klassenRaster(klassenId) : [];
+      let zusammenhaengend = true;
+      for (let i = 1; i < sortiert.length; i++) {
+        const endeVor = sortiert[i - 1].ende.slice(0, 5);
+        const startJetzt = sortiert[i].start.slice(0, 5);
+        if (startJetzt <= endeVor) continue;            // nahtlos oder ueberlappend
+        const freieStunde = raster.length
+            ? raster.some(r => r.start >= endeVor && r.ende <= startJetzt)
+            // Ohne gepflegtes Raster: eine Luecke, in die eine ganze
+            // Schulstunde passt, ist eine echte Luecke - kuerzeres ist Pause.
+            : (this.timeToMinutes(startJetzt) - this.timeToMinutes(endeVor)) >= 45;
+        if (freieStunde) { zusammenhaengend = false; break; }
+      }
+
+      // Felder, die nicht überall gleich sind, bleiben leer.
+      const alleGleich = (lies) => sortiert.every(t => String(lies(t) ?? '') === String(lies(sortiert[0]) ?? ''));
+      const basis = {...sortiert[0]};
+      if (!alleGleich(t => t.klassen_id)) { basis.klassen_id = null; basis.klasse = ''; }
+      if (!alleGleich(t => (this.raumIdsAusTermin(t) || []).join(','))) basis.raum_ids = [];
+      if (!alleGleich(t => t.erstkraft_id))  basis.erstkraft_id = null;
+      if (!alleGleich(t => t.zweitkraft_id)) basis.zweitkraft_id = null;
+      if (!alleGleich(t => t.einsatzort))    basis.einsatzort = '';
+      if (!alleGleich(t => t.is_differenzierung)) basis.is_differenzierung = false;
+
+      basis.start = sortiert[0].start;
+      basis.ende  = sortiert[sortiert.length - 1].ende;
+
+      this.editLehrerAssignment(basis);
+      this.mehrfachAuswahl = {
+        ids: sortiert.map(t => t.termin_id),
+        anzahl: sortiert.length,
+        zusammenhaengend
+      };
+      // editLehrerAssignment leitet die Stundenzahl aus der Zeitspanne ab; bei
+      // einer Auswahl mit Luecke ist das die Spanne inklusive Luecke. Gezaehlt
+      // werden aber die tatsaechlich gewaehlten Stunden.
+      this.stundenAuswahl = sortiert.length;
+      if (!alleGleich(t => this.raumIdsAusTermin(t).join(','))) {
+        this.lehrerPlanForm.raum_ids = [];
+        this.lehrerPlanForm.raeume = [];
+      }
+    },
     editLehrerAssignment(termin) {
+      // Ein gewoehnlicher Klick bearbeitet genau eine Stunde. Die Mehrfach-
+      // auswahl setzt sich danach selbst wieder (s. oeffneMehrfachBearbeitung).
+      this.mehrfachAuswahl = null;
       // 1. Tiefe Kopie des Objekts erstellen, um die Originaldaten im Plan nicht sofort zu manipulieren
       this.lehrerPlanForm = {...termin};
 
@@ -8989,11 +9266,72 @@ export default {
       }
 
       const excludeId = this.lehrerPlanForm.termin_id;
+      // Bei einer Mehrfachauswahl duerfen ALLE gewaehlten Stunden nicht als
+      // Konflikt gelten - sie werden ja gerade ersetzt.
+      const eigeneIds = (this.mehrfachAuswahl?.ids || [excludeId])
+          .filter(id => id !== undefined && id !== null).map(String);
 
       // Ziel-Plan bestimmen: Diensteinsatzplan (Zweitkraft) oder Lehrerstundenplan (Erstkraft)
       const isDienst = this.activeCategory === 'diensteinsatzplan';
       const targetPlan = isDienst ? this.currentDiensteinsatzplan : this.currentLehrerstundenplan;
       if (!targetPlan.termine) targetPlan.termine = [];
+
+      // Mehrfachauswahl mit Luecke: Die Stunden bleiben, wo sie sind -
+      // zusammenschieben wuerde sie in fremde Zeiten ruecken. Geaendert werden
+      // nur die Felder aus dem Modal.
+      //
+      // Das muss VOR den Pruefungen weiter unten stehen: die rechnen mit der
+      // zusammengefassten Spanne (erste Start- bis letzte Endzeit), und die
+      // schliesst hier die Luecke ein. Kein Zeitraster kennt eine so lange
+      // Stunde, die Klassenpruefung schlug deshalb fehl und brach das
+      // Speichern ab. Geprueft wird stattdessen je gewaehlter Stunde einzeln.
+      if (this.mehrfachAuswahl && !this.mehrfachAuswahl.zusammenhaengend) {
+        const gewaehlt = this.mehrfachAuswahl.ids.map(String);
+        const felder = {
+          klassen_id: this.lehrerPlanForm.klassen_id ?? null,
+          klasse: this.lehrerPlanForm.klasse ?? '',
+          raum_ids: [...(this.lehrerPlanForm.raum_ids || [])],
+          is_differenzierung: !!this.lehrerPlanForm.is_differenzierung
+        };
+        const kraftFelderMehrfach = isDienst
+            ? {zweitkraft_id: this.activeZweitkraftId}
+            : {erstkraft_id: this.activeLehrerId};
+
+        // Die oben gesammelten Hinweise gelten der Spanne und passen hier nicht.
+        hinweise.length = 0;
+
+        const betroffen = (targetPlan.termine || [])
+            .filter(t => gewaehlt.includes(String(t.termin_id)));
+
+        for (const t of betroffen) {
+          const s = String(t.start).slice(0, 5);
+          const e = String(t.ende).slice(0, 5);
+
+          for (const raumId of felder.raum_ids) {
+            if (this.raumGeschlossen(raumId, t.tag, s, e)) {
+              const r = this.raumVerfuegbarkeiten.find(x => String(x.id) === String(raumId));
+              hinweise.push(`\u{1F6AB} ${r ? r.name : 'Raum'} ist ${s}–${e} geschlossen.`);
+            }
+          }
+          for (const zeile of this.raumKollisionen(felder.raum_ids, t.tag, s, e, t.termin_id)) {
+            hinweise.push('\u{1F6AA} Raum bereits belegt: ' + zeile.replace(/^\u2022\s*/, ''));
+          }
+          if (felder.klassen_id &&
+              !this.isKlasseVerfuegbar(felder.klassen_id, t.tag, s, e, t.termin_id,
+                                       felder.is_differenzierung, hinweise)) {
+            this.showStatus(`Die Klasse passt nicht in die Stunde ${s}–${e}.`, 'error');
+            return;
+          }
+        }
+
+        targetPlan.termine = (targetPlan.termine || []).map(t =>
+            gewaehlt.includes(String(t.termin_id)) ? {...t, ...felder, ...kraftFelderMehrfach} : t
+        );
+        this.resetLehrerForm();
+        if (hinweise.length) this.zeigeWarnungen(hinweise);
+        else this.showStatus(`${gewaehlt.length} Stunden geändert`, 'success');
+        return;
+      }
 
       // --- B. KLASSEN-VERFÜGBARKEITSPRÜFUNG ---
       // Prüft Zeitraster [cite: 6] und bestehende Termine der Klasse
@@ -9024,7 +9362,7 @@ export default {
         const doppelung = kraftDaten.termine.find(t => {
           // 1. Nicht mit sich selbst vergleichen (wichtig beim Bearbeiten).
           // PHP liefert 'termin_id' als String, das Formular ggf. als Zahl.
-          if (excludeId && String(t.termin_id) === String(excludeId)) return false;
+          if (eigeneIds.includes(String(t.termin_id))) return false;
 
           // 2. Nur Termine am gleichen Tag prüfen
           if (t.tag !== tagNeu) return false;
@@ -9051,11 +9389,12 @@ export default {
       // Erfolgsmeldung sie nicht sofort wieder ueberschreibt.
 
       // --- C. DATEN-MANIPULATION (Das Herzstück für die UI) ---
+
       // 1. Altes Objekt entfernen (beim Verschieben)
       if (this.lehrerPlanForm.dragMode === 'move' || this.lehrerPlanForm.dragMode === 'edit') {
         targetPlan.termine = targetPlan.termine.filter(t => {
           // Wandle beides in Strings um, um "42" === 42 Probleme zu vermeiden
-          const matchUuid = t.termin_id === this.lehrerPlanForm.termin_id;
+          const matchUuid = eigeneIds.includes(String(t.termin_id));
           // Gib true zurück für alles, was NICHT gelöscht werden soll
           return !(matchUuid);
         });
@@ -9078,7 +9417,11 @@ export default {
       // "derselbe Termin" und meldet die Klasse faelschlich als belegt.
       const istBearbeitung = !!excludeId &&
           (this.lehrerPlanForm.dragMode === 'edit' || this.lehrerPlanForm.dragMode === 'move');
-      let idsZumWiederverwenden = istBearbeitung ? [excludeId] : [];
+      // Die IDs der ersetzten Stunden werden weiterverwendet, damit aus einer
+      // Bearbeitung kein Loeschen-und-neu-Anlegen wird (s. Kommentar oben).
+      let idsZumWiederverwenden = istBearbeitung
+          ? (this.mehrfachAuswahl ? [...this.mehrfachAuswahl.ids] : [excludeId])
+          : [];
       const naechsteTerminId = () =>
           idsZumWiederverwenden.length ? idsZumWiederverwenden.shift() : crypto.randomUUID();
 
@@ -9170,6 +9513,7 @@ export default {
       this.isNewKlasse = false;
       this.selectedUniqueKey = null; // Visuelle Auswahl im Grid löschen
       this.stundenAuswahl = 1;
+      this.mehrfachAuswahl = null;
 
       // 2. DAS MODAL SCHLIESSEN
       this.showLehrerPlanModal = false;
@@ -9284,6 +9628,7 @@ export default {
       this.showLehrerModal = false;
       this.showPersonModal = false;
       this.pendingAssignment = null; // Daten einfach löschen
+      this.mehrfachSchueler = null;
     },
     getAssignment(tag, stunde) {
       const cellKey = `${tag}-${stunde.id}`;
