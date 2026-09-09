@@ -5037,20 +5037,33 @@ if ($action === 'get_raum_verfuegbarkeit') {
                                    ORDER BY einsatzort");
           $stmtP->execute([$zweitkraft_id]);
           $pflichtTeile = [];
+
           // Woran die Zweitkraft eingesetzt ist, entscheidet ueber die
-          // Unterschrifts- und Genehmigungszeilen (siehe unten). Massgeblich
-          // sind die Einsatzorte der Regelstundenmasse - auch die mit 0
-          // Stunden, denn der Ort ist damit trotzdem hinterlegt.
+          // Unterschrifts- und Genehmigungszeilen (siehe unten). Gezaehlt
+          // werden BEIDE Quellen: die Einsatzorte der Regelstundenmasse und
+          // die der eingeplanten Aktivitaeten. Eine Zweitkraft kann im Plan
+          // an einer Tagesstaette stehen, ohne dass dafuer ein
+          // Regelstundenmass hinterlegt ist - unterschreiben muss die
+          // Tagesstaettenleitung trotzdem.
           $hatSchule = false;
           $hatTagesstaette = false;
-          foreach ($stmtP->fetchAll(PDO::FETCH_ASSOC) as $p) {
-              $ort = trim((string)$p['einsatzort']);
-              if ($ort === '') continue;
+          $ortPruefen = function ($ort) use (&$hatSchule, &$hatTagesstaette) {
+              $ort = trim((string)$ort);
+              if ($ort === '') return;
               // Umlaute vereinheitlichen, damit "Tagesstaette" wie
               // "Tagesstätte" erkannt wird; Gross-/Kleinschreibung egal.
               $norm = strtr(mb_strtolower($ort), ['ä' => 'ae', 'ö' => 'oe', 'ü' => 'ue', 'ß' => 'ss']);
               if (strpos($norm, 'schule') !== false)       $hatSchule = true;
               if (strpos($norm, 'tagesstaette') !== false) $hatTagesstaette = true;
+          };
+          foreach ($termine as $t) $ortPruefen($t['einsatzort'] ?? '');
+
+          foreach ($stmtP->fetchAll(PDO::FETCH_ASSOC) as $p) {
+              $ort = trim((string)$p['einsatzort']);
+              if ($ort === '') continue;
+              // Auch Orte mit 0 Stunden zaehlen fuer die Unterschriftszeile:
+              // der Ort ist damit trotzdem hinterlegt.
+              $ortPruefen($ort);
 
               if ((float)$p['summe'] <= 0) continue;
               $pflichtTeile[] = $fmtStunden($p['summe']) . ' ' . $ort;

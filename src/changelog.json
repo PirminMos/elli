@@ -2,7 +2,12 @@
   "generated": "2026-09-09",
   "commits": [
     {
-      "hash": "8f62f56",
+      "hash": "57c5d1a",
+      "date": "2026-09-09",
+      "subject": "Fix: Unterschriftszeilen erkannten nur Einsatzorte der Regelstundenmasse"
+    },
+    {
+      "hash": "dee9aed",
       "date": "2026-09-09",
       "subject": "Feature: Diensteinsatzplan - Unterschriften je nach Einsatzort"
     },
@@ -495,11 +500,6 @@
       "hash": "22448ed",
       "date": "2026-07-19",
       "subject": "Docs: README mit Projektbeschreibung von elli fuellen"
-    },
-    {
-      "hash": "e1404bb",
-      "date": "2026-07-14",
-      "subject": "Feature: automatische Hintergrund-Backups der Datenbank"
     }
   ]
 }
