@@ -701,6 +701,11 @@
                              @click.stop="selectBeruf(bIdx, opt)">
                           {{ berufLabel(opt) }}
                         </div>
+                        <div class="custom-option beruf-add-option"
+                             @click.stop="openBerufModal(bIdx)"
+                             title="Eine eigene Berufsbezeichnung anlegen">
+                          <span class="icon">+</span> Beruf hinzufügen
+                        </div>
                       </div>
                     </transition>
                   </div>
@@ -1690,6 +1695,39 @@ Abgewählt: nur die tatsächlichen Termine; Lücken dazwischen erscheinen als le
             <div class="modal-footer">
               <button class="glass-btn-save" :disabled="!editingFach.name" @click="saveFach">
                 Fach speichern
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+
+      <transition name="fade">
+        <div v-if="showBerufModal" class="modal-overlay" @click.self="showBerufModal = false">
+          <div class="modal-content glass-modal">
+            <div class="modal-header">
+              <h3><span class="icon">🧑‍🏫</span> Neuer Beruf</h3>
+              <button class="close-btn-circle" @click="showBerufModal = false">×</button>
+            </div>
+
+            <div class="modal-body">
+              <div class="input-floating-group">
+                <label>Berufsbezeichnung:</label>
+                <input v-model="neuerBerufName" placeholder="z.B. Heilerziehungspflegerin"
+                       class="glass-input-large" @keyup.enter="saveNeuerBeruf" ref="berufInput">
+              </div>
+              <p class="modal-hint">
+                Bitte in der weiblichen Form eintragen – bei Zweitkräften mit der
+                Einstellung „Männlich“ entsteht daraus automatisch die männliche
+                Form (Heilerziehungspflegerin → Heilerziehungspfleger). Der Beruf
+                steht danach allen Zweitkräften zur Auswahl.
+              </p>
+            </div>
+
+            <div class="modal-footer">
+              <button class="glass-btn-save"
+                      :disabled="!neuerBerufName.trim() || berufSpeichert"
+                      @click="saveNeuerBeruf">
+                {{ berufSpeichert ? 'Speichern…' : 'Beruf speichern' }}
               </button>
             </div>
           </div>
@@ -3444,6 +3482,34 @@ textarea {
 
 .custom-option:hover {
   background: rgba(35, 164, 74, 0.4); /* Dein Grün-Ton bei Hover */
+}
+
+/* "+ Beruf hinzufügen" schließt die Auswahlliste ab: zentriert, optisch
+   abgesetzt und dank sticky auch bei vielen Berufen immer sichtbar. */
+.custom-option.beruf-add-option {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  color: #23a44a;
+  background: rgba(30, 30, 30, 0.98);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.custom-option.beruf-add-option:hover {
+  background: rgba(35, 164, 74, 0.4);
+  color: #ffffff;
+}
+
+/* Erklärender Kleintext unter einem Eingabefeld im Modal */
+.modal-hint {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 12px 0 0;
 }
 
 .custom-select-trigger {
@@ -6288,7 +6354,13 @@ export default {
         upz: 20,
         grund_ermaessigung: '',
       },
+      // Die vier Standardberufe als Startwert; selbst angelegte Berufe kommen
+      // beim Laden aus der Datenbank dazu (siehe ladeBerufe/loadFromDatabase).
       berufeOptionen: ['Kinderpflegerin', 'Erzieherin', 'Praktikantin', 'Individualbegleitung'],
+      showBerufModal: false,
+      neuerBerufName: '',
+      berufModalIndex: null,   // Berufsblock, aus dem heraus angelegt wurde
+      berufSpeichert: false,
       currentSchuelerStundenPlan: {
         id: null,
         klasse_name: null,
@@ -7140,6 +7212,69 @@ export default {
         this.currentZweitkraft.berufe[bIdx] = opt; // kanonische (weibliche) Form
       }
       this.activeDropdown = null;
+    },
+    // Auswahlliste der Berufe: die vier Standardberufe plus alles, was hier
+    // selbst angelegt wurde. Kommt normalerweise mit load_editor_data mit;
+    // dieser Aufruf ist der Nachzieher, wenn noch kein Schuljahr geladen war.
+    async ladeBerufe() {
+      try {
+        const res = await fetch(`${API_URL}?action=load_berufe`);
+        const data = await res.json();
+        if (Array.isArray(data.berufe) && data.berufe.length) {
+          this.berufeOptionen = data.berufe;
+        }
+      } catch (e) {
+        console.error('Berufe konnten nicht geladen werden:', e);
+      }
+    },
+    // Öffnet den Dialog für einen neuen Beruf. bIdx merkt sich den Berufsblock,
+    // damit der neue Beruf danach gleich dort eingetragen werden kann.
+    openBerufModal(bIdx) {
+      this.berufModalIndex = bIdx;
+      this.neuerBerufName = '';
+      this.activeDropdown = null;   // Dropdown zu, sonst liegt es über dem Modal
+      this.showBerufModal = true;
+      this.$nextTick(() => {
+        if (this.$refs.berufInput) this.$refs.berufInput.focus();
+      });
+    },
+    async saveNeuerBeruf() {
+      const name = (this.neuerBerufName || '').trim();
+      if (!name || this.berufSpeichert) return;
+
+      this.berufSpeichert = true;
+      try {
+        const res = await fetch(`${API_URL}?action=save_beruf`, {
+          method: 'POST',
+          body: JSON.stringify({name})
+        });
+        const data = await res.json();
+
+        // Die API liefert die vollständige Liste zurück – auch im Fehlerfall
+        // (z.B. Name schon vergeben), damit die Auswahl aktuell bleibt.
+        if (Array.isArray(data.berufe) && data.berufe.length) {
+          this.berufeOptionen = data.berufe;
+        }
+
+        if (!data.success) {
+          this.showStatus(data.error || 'Beruf konnte nicht gespeichert werden.', 'error');
+          return;
+        }
+
+        // Direkt übernehmen: wer den Beruf aus einem Block heraus anlegt, will
+        // ihn dort auch stehen haben.
+        if (this.berufModalIndex !== null) {
+          this.selectBeruf(this.berufModalIndex, data.name);
+        }
+        this.showBerufModal = false;
+        this.berufModalIndex = null;
+        this.showStatus(`Beruf „${data.name}“ angelegt.`);
+      } catch (e) {
+        console.error('Fehler beim Speichern des Berufs:', e);
+        this.showStatus('Verbindungsfehler beim Speichern des Berufs.', 'error');
+      } finally {
+        this.berufSpeichert = false;
+      }
     },
     addBeruf() {
       const cz = this.currentZweitkraft;
@@ -10801,6 +10936,11 @@ export default {
           })
           this.faecher = data.faecher || [];
           this.verfuegbareFaecher = data.faecher || [];
+          // Berufe kommen ohne Schuljahrbezug mit; bei leerer Antwort bleibt
+          // die bisherige Liste stehen statt auf die Standardberufe zu fallen.
+          if (Array.isArray(data.berufe) && data.berufe.length) {
+            this.berufeOptionen = data.berufe;
+          }
         }
         console.log("Zu editierende Daten", this.erstkraefte);
         console.log("Zu editierende Daten", this.aktivitaeten);
@@ -11184,6 +11324,7 @@ export default {
     // Buchstabensprung in den Dropdowns (ersetzt, was ein natives <select> koennte)
     window.addEventListener('keydown', this.handleDropdownTypeahead);
     this.loadSettings();
+    this.ladeBerufe();
     // Still im Hintergrund schauen, ob es eine neuere Version gibt.
     this.pruefeUpdates();
 

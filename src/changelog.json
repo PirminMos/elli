@@ -1,8 +1,13 @@
 {
-  "generated": "2026-09-08",
+  "generated": "2026-09-09",
   "commits": [
     {
-      "hash": "7bc122f",
+      "hash": "e9f7390",
+      "date": "2026-09-09",
+      "subject": "Feature: Eigene Berufe fuer Zweitkraefte anlegen"
+    },
+    {
+      "hash": "577f5be",
       "date": "2026-09-08",
       "subject": "Feature: Stapel-Export der Plaene als ZIP"
     },
@@ -495,11 +500,6 @@
       "hash": "36a9deb",
       "date": "2026-07-14",
       "subject": "Chore: .gitattributes erzwingt LF fuer Shell-Skripte und Git-Hook"
-    },
-    {
-      "hash": "3067999",
-      "date": "2026-07-14",
-      "subject": "Feature: Backup-/Restore-Skripte fuer DB-Umzug auf anderen Server"
     }
   ]
 }

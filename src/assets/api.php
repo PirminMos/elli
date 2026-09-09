@@ -385,6 +385,64 @@ function elli_ensure_zweitkraft_columns(PDO $conn) {
         ADD COLUMN IF NOT EXISTS maennlich TINYINT(1) NOT NULL DEFAULT 0");
 }
 
+// Die vier fest eingebauten Berufe. Sie stehen immer zur Auswahl, alles Weitere
+// legt der Nutzer selbst an (Tabelle `beruf`).
+function elli_standard_berufe(): array {
+    return ['Kinderpflegerin', 'Erzieherin', 'Praktikantin', 'Individualbegleitung'];
+}
+
+// Selbstheilung: Tabelle fuer die selbst angelegten Berufe. Bewusst global und
+// nicht je Schuljahr - eine Berufsbezeichnung gilt schuljahruebergreifend.
+function elli_ensure_beruf_tabelle(PDO $conn) {
+    $conn->exec("CREATE TABLE IF NOT EXISTS beruf (
+        id   INT(11)      NOT NULL AUTO_INCREMENT,
+        name VARCHAR(100) NOT NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uniq_beruf_name (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+// Eingegebenen Berufsnamen saeubern: Rand- und Mehrfach-Leerzeichen weg,
+// Alt-Format ":in" auf die kanonische Form, Laenge auf die Spaltenbreite.
+function elli_beruf_normalisieren(?string $name): string {
+    $name = str_replace(':in', 'in', trim((string)$name));
+    $name = preg_replace('/\s+/u', ' ', $name);
+    return mb_substr($name, 0, 100);
+}
+
+// Auswahlliste fuers Frontend: erst die vier Standardberufe, danach die selbst
+// angelegten alphabetisch. Berufe, die nur noch an einer Zweitkraft haengen
+// (z. B. aus einer eingespielten Sicherung), kommen mit in die Liste - sonst
+// wuerde eine bestehende Zuordnung aus der Auswahl verschwinden.
+function elli_berufe_liste(PDO $conn): array {
+    elli_ensure_beruf_tabelle($conn);
+    elli_ensure_zweitkraft_columns($conn);
+
+    $eigene = $conn->query("SELECT name FROM beruf")->fetchAll(PDO::FETCH_COLUMN);
+    $benutzt = $conn->query("
+        SELECT typ  AS name FROM zweitkraft WHERE typ  IS NOT NULL AND typ  <> ''
+        UNION SELECT typ2   FROM zweitkraft WHERE typ2 IS NOT NULL AND typ2 <> ''
+        UNION SELECT typ3   FROM zweitkraft WHERE typ3 IS NOT NULL AND typ3 <> ''
+    ")->fetchAll(PDO::FETCH_COLUMN);
+
+    $standard = elli_standard_berufe();
+    $bekannt  = [];                       // Kleinschreibung -> schon vergeben
+    foreach ($standard as $s) $bekannt[mb_strtolower($s)] = true;
+
+    $zusatz = [];
+    foreach (array_merge($eigene, $benutzt) as $name) {
+        $name = elli_beruf_normalisieren($name);
+        if ($name === '') continue;
+        $key = mb_strtolower($name);
+        if (isset($bekannt[$key]) || isset($zusatz[$key])) continue;
+        $zusatz[$key] = $name;
+    }
+    $zusatz = array_values($zusatz);
+    usort($zusatz, 'strnatcasecmp');
+
+    return array_merge($standard, $zusatz);
+}
+
 // Berufsbezeichnung fuers Ausgeben aufbereiten: gespeichert wird die kanonische
 // (weibliche) Form; bei maennlich wird das End-"in" entfernt (Kinderpflegerin ->
 // Kinderpfleger, Erzieherin -> Erzieher, Praktikantin -> Praktikant). Formen ohne
@@ -1687,6 +1745,60 @@ if ($action === 'save_setting') {
     exit;
 }
 
+// --- BERUFE LADEN (Standardberufe + selbst angelegte) ---
+if ($action === 'load_berufe') {
+    try {
+        echo json_encode([
+            'berufe'   => elli_berufe_liste($conn),
+            'standard' => elli_standard_berufe()
+        ]);
+    } catch (PDOException $e) {
+        header('Content-Type: application/json', true, 500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// --- NEUEN BERUF ANLEGEN ---
+// Gespeichert wird die kanonische (weibliche) Form; die maennliche Anzeige
+// leitet elli_beruf_form() daraus ab.
+if ($action === 'save_beruf') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $name = elli_beruf_normalisieren($data['name'] ?? '');
+
+    if ($name === '') {
+        echo json_encode(['success' => false, 'error' => 'Bitte eine Berufsbezeichnung eingeben.']);
+        exit;
+    }
+
+    try {
+        $vorhanden = elli_berufe_liste($conn);
+        foreach ($vorhanden as $b) {
+            if (mb_strtolower($b) === mb_strtolower($name)) {
+                echo json_encode([
+                    'success' => false,
+                    'error'   => '„' . $b . '“ steht bereits zur Auswahl.',
+                    'berufe'  => $vorhanden
+                ]);
+                exit;
+            }
+        }
+
+        $stmt = $conn->prepare("INSERT IGNORE INTO beruf (name) VALUES (:name)");
+        $stmt->execute([':name' => $name]);
+
+        echo json_encode([
+            'success' => true,
+            'name'    => $name,
+            'berufe'  => elli_berufe_liste($conn)
+        ]);
+    } catch (PDOException $e) {
+        header('Content-Type: application/json', true, 500);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 // --- ADRESSE SEPARAT SPEICHERN (Für Auto-Save) ---
 if ($action === 'save_address') {
     $data = json_decode(file_get_contents("php://input"), true);
@@ -1826,6 +1938,9 @@ if ($action === 'load_editor_data') {
         $stmt = $conn->prepare("SELECT * FROM schulfach WHERE schuljahr_id = :sid ORDER BY name ASC");
         $stmt->execute([':sid' => $sid]);
         $res['faecher'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Berufe der Zweitkraefte: gelten schuljahruebergreifend, deshalb ohne :sid.
+        $res['berufe'] = elli_berufe_liste($conn);
 
         echo json_encode($res);
 
