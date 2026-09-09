@@ -385,6 +385,83 @@ function elli_ensure_zweitkraft_columns(PDO $conn) {
         ADD COLUMN IF NOT EXISTS maennlich TINYINT(1) NOT NULL DEFAULT 0");
 }
 
+// Selbstheilung: frei formulierte UPZ-Aufschluesselung einer Erstkraft. Sie
+// steht im Export hinter der UPZ-Zahl in Klammern; ist sie leer, rechnet der
+// Export die Klammer wie bisher aus der Stundentafel.
+function elli_ensure_erstkraft_columns(PDO $conn) {
+    $conn->exec("ALTER TABLE erstkraft
+        ADD COLUMN IF NOT EXISTS upz_verteilung VARCHAR(255) DEFAULT NULL");
+}
+
+// Vorschlag fuer die individuelle Stundenverteilung einer Erstkraft, z.B.
+// "6 Kl., 3 SVE, 4 FöÜ GS, 6 MSD". Gerechnet wird aus dem tatsaechlichen
+// Stundenplan (Termine), nicht aus der Stundentafel - nur am Termin haengt
+// eine Klasse, und nur so kommt die SVE-Klasse getrennt heraus.
+//
+// Gezaehlt wird in UNTERRICHTSSTUNDEN: 45 Minuten sind eine Stunde. Ein
+// Termin von 08:00 bis 08:45 zaehlt also als 1, nicht als 0,75.
+//
+// Zuordnung jeder Stunde genau einmal:
+//   - Termin mit Aktivitaet  -> zaehlt zur Aktivitaet (auch mit Klasse dran)
+//   - sonst Klasse "SVE"     -> zaehlt zu SVE
+//   - sonst                  -> zaehlt zu "Kl." (Unterricht)
+// Aktivitaeten mit dem Kennzeichen "zaehlt nicht" (Mittagspause) bleiben
+// aussen vor, sie sind keine Unterrichtspflichtzeit.
+// Stunden im deutschen Format: 3.75 -> "3,75", 1.5 -> "1,5", 2 -> "2".
+// Gleiche Darstellung wie in den Exporten, dort jeweils als lokale Closure.
+function elli_fmt_stunden($h): string {
+    $s = number_format((float)$h, 2, ',', '');
+    if (substr($s, -1) === '0') $s = substr($s, 0, -1);
+    if (substr($s, -1) === '0') $s = substr($s, 0, -1);
+    if (substr($s, -1) === ',') $s = substr($s, 0, -1);
+    return $s;
+}
+
+function elli_upz_vorschlag(PDO $conn, int $erstkraftId): string {
+    elli_ensure_aktivitaet_zaehlt_nicht($conn);
+
+    $stmt = $conn->prepare("
+        SELECT k.name AS klasse, a.name AS aktivitaet,
+               COALESCE(a.zaehlt_nicht, 0) AS zaehlt_nicht,
+               SUM(TIME_TO_SEC(TIMEDIFF(t.ende, t.start)) / 60) AS minuten
+        FROM termin_verantwortliche tv
+        JOIN termin t ON t.id = tv.termin_id
+        LEFT JOIN klassen k ON k.id = t.klassen_id
+        LEFT JOIN aktivitaet a ON a.id = t.aktivitaet_id
+        WHERE tv.kraft_typ = 'erst' AND tv.kraft_id = ?
+        GROUP BY k.id, a.id, a.zaehlt_nicht");
+    $stmt->execute([$erstkraftId]);
+
+    $klassenSumme = 0.0;
+    $sveSumme     = 0.0;
+    $aktivitaeten = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        if (!empty($r['zaehlt_nicht'])) continue;
+        // Minuten in Unterrichtsstunden umrechnen (45 Minuten = 1 Stunde).
+        $stunden = (float)$r['minuten'] / 45;
+        if ($stunden <= 0) continue;
+
+        $aktivitaet = trim((string)($r['aktivitaet'] ?? ''));
+        if ($aktivitaet !== '') {
+            $aktivitaeten[$aktivitaet] = ($aktivitaeten[$aktivitaet] ?? 0) + $stunden;
+        } elseif (mb_strtolower(trim((string)($r['klasse'] ?? ''))) === 'sve') {
+            $sveSumme += $stunden;
+        } else {
+            $klassenSumme += $stunden;
+        }
+    }
+
+    ksort($aktivitaeten, SORT_NATURAL | SORT_FLAG_CASE);
+
+    $teile = [];
+    if ($klassenSumme > 0) $teile[] = elli_fmt_stunden($klassenSumme) . ' Kl.';
+    if ($sveSumme > 0)     $teile[] = elli_fmt_stunden($sveSumme) . ' SVE';
+    foreach ($aktivitaeten as $name => $stunden) {
+        $teile[] = elli_fmt_stunden($stunden) . ' ' . $name;
+    }
+    return implode(', ', $teile);
+}
+
 // Die vier fest eingebauten Berufe. Sie stehen immer zur Auswahl, alles Weitere
 // legt der Nutzer selbst an (Tabelle `beruf`).
 function elli_standard_berufe(): array {
@@ -1455,8 +1532,8 @@ if ($action === 'copy_schuljahr_data') {
 
         // 1. Erstkraefte (kein Remap noetig)
         $conn->prepare("
-            INSERT INTO erstkraft (schuljahr_id, name, titel, kuerzel, farbe, pflichtstunden, ermaessigung, upz, faecher, textfarbe, ermaessigung_grund)
-            SELECT ?, name, titel, kuerzel, farbe, pflichtstunden, ermaessigung, upz, faecher, textfarbe, ermaessigung_grund
+            INSERT INTO erstkraft (schuljahr_id, name, titel, kuerzel, farbe, pflichtstunden, ermaessigung, upz, faecher, textfarbe, ermaessigung_grund, upz_verteilung)
+            SELECT ?, name, titel, kuerzel, farbe, pflichtstunden, ermaessigung, upz, faecher, textfarbe, ermaessigung_grund, upz_verteilung
             FROM erstkraft WHERE schuljahr_id = ?
         ")->execute([$dst, $src]);
 
@@ -1876,6 +1953,7 @@ if ($action === 'load_editor_data') {
 
         // Erstkräfte des gewählten Jahres
         elli_ensure_dezimal_stunden($conn);
+        elli_ensure_erstkraft_columns($conn);
         $stmt = $conn->prepare("SELECT * FROM erstkraft WHERE schuljahr_id = :sid ORDER BY name ASC");
         $stmt->execute([':sid' => $sid]);
         $erstkraefte = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -2485,36 +2563,64 @@ if ($action === 'save_activity') {
     exit;
 }
 
+// --- VORSCHLAG FUER DIE INDIVIDUELLE STUNDENVERTEILUNG ---
+// Liefert den aus dem Stundenplan gerechneten Vorschlag als Text. Das
+// Frontend setzt ihn nur in ein leeres Feld ein.
+if ($action === 'get_upz_vorschlag') {
+    $erstkraftId = isset($_GET['erstkraft_id']) ? (int)$_GET['erstkraft_id'] : 0;
+    if (!$erstkraftId) {
+        echo json_encode(['success' => false, 'error' => 'erstkraft_id fehlt']);
+        exit;
+    }
+    try {
+        echo json_encode(['success' => true, 'vorschlag' => elli_upz_vorschlag($conn, $erstkraftId)]);
+    } catch (PDOException $e) {
+        header('Content-Type: application/json', true, 500);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 // --- ERSTKRAFT SPEICHERN ---
 if ($action === 'save_erstkraft') {
     $data = json_decode(file_get_contents('php://input'), true);
 
     try {
         elli_ensure_dezimal_stunden($conn);
+        elli_ensure_erstkraft_columns($conn);
+        // Leerer Text wird als NULL abgelegt: "keine eigene Verteilung" ist ein
+        // Zustand und kein leerer String - der Export faellt dann auf die
+        // bisherige Automatik zurueck.
+        $verteilung = trim((string)($data['upz_verteilung'] ?? ''));
+        $verteilung = $verteilung === '' ? null : mb_substr($verteilung, 0, 255);
+
         if (isset($data['id']) && $data['id']) {
             // Update bestehend
             $stmt = $conn->prepare("UPDATE erstkraft SET
                 name = ?, titel = ?, kuerzel = ?,
                 farbe = ?, textfarbe = ?,
-                pflichtstunden = ?, ermaessigung = ?, upz = ?, faecher = ?
+                pflichtstunden = ?, ermaessigung = ?, upz = ?, faecher = ?,
+                upz_verteilung = ?
                 WHERE id = ?");
 
             $stmt->execute([
                 $data['name'], $data['titel'], $data['kuerzel'],
                 $data['farbe'], $data['textfarbe'],
                 $data['pflichtstunden'], $data['ermaessigung'], $data['upz'], $data['faecher'],
+                $verteilung,
                 $data['id']
             ]);
             $id = $data['id'];
         } else {
             // Neu anlegen - HIER textfarbe ergänzt:
             $stmt = $conn->prepare("INSERT INTO erstkraft
-                (schuljahr_id, name, titel, kuerzel, farbe, textfarbe, pflichtstunden, ermaessigung, upz, faecher)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                (schuljahr_id, name, titel, kuerzel, farbe, textfarbe, pflichtstunden, ermaessigung, upz, faecher, upz_verteilung)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $data['schuljahr_id'], $data['name'], $data['titel'], $data['kuerzel'],
                 $data['farbe'], $data['textfarbe'] ?? '#ffffff', // Fallback auf Weiß, falls nicht gesetzt
-                $data['pflichtstunden'], $data['ermaessigung'], $data['upz'], $data['faecher']
+                $data['pflichtstunden'], $data['ermaessigung'], $data['upz'], $data['faecher'],
+                $verteilung
             ]);
             $id = $conn->lastInsertId();
         }
@@ -3205,7 +3311,9 @@ if ($action === 'export_lehrerstundenplan') {
         $schule3 = $adressZeilen[2] ?? '';
 
         // 2. Lehrkraft
-        $stmtE = $conn->prepare("SELECT name, titel, pflichtstunden, ermaessigung, ermaessigung_grund, upz
+        elli_ensure_erstkraft_columns($conn);
+        $stmtE = $conn->prepare("SELECT name, titel, pflichtstunden, ermaessigung, ermaessigung_grund, upz,
+                                        upz_verteilung
                                  FROM erstkraft WHERE id = ? AND schuljahr_id = ?");
         $stmtE->execute([$erstkraft_id, $schuljahr_id]);
         $e = $stmtE->fetch(PDO::FETCH_ASSOC);
@@ -3255,30 +3363,19 @@ if ($action === 'export_lehrerstundenplan') {
             $byTag[$tag] = $liste;
         }
 
-        // 4. UPZ-Aufschlüsselung aus lehrer_stundentafel: Gesamtstunden in Schulfächern
-        //    als ein Posten ("Unterricht"), danach Stunden je Aktivität einzeln.
-        $stmtP = $conn->prepare("SELECT ls.fach_id, ls.aktivitaet_id, ls.soll_stunden, a.name AS aktivitaet_name
-                                 FROM lehrer_stundentafel ls
-                                 LEFT JOIN aktivitaet a ON a.id = ls.aktivitaet_id
-                                 WHERE ls.erstkraft_id = ?");
-        $stmtP->execute([$erstkraft_id]);
-        $unterrichtSumme = 0.0;
-        $aktivitaetSummen = [];
-        foreach ($stmtP->fetchAll(PDO::FETCH_ASSOC) as $p) {
-            $stunden = (float)$p['soll_stunden'];
-            if ($p['fach_id']) {
-                $unterrichtSumme += $stunden;
-            } elseif ($p['aktivitaet_id']) {
-                $name = $p['aktivitaet_name'] ?: 'Sonstiges';
-                $aktivitaetSummen[$name] = ($aktivitaetSummen[$name] ?? 0) + $stunden;
-            }
-        }
-        $upzTeile = [];
-        if ($unterrichtSumme > 0) $upzTeile[] = $fmtStunden($unterrichtSumme) . ' Unterricht';
-        foreach ($aktivitaetSummen as $name => $stunden) {
-            $upzTeile[] = $fmtStunden($stunden) . ' ' . $name;
-        }
-        $upzText = $fmtStunden($e['upz']) . (count($upzTeile) ? ' (' . implode(', ', $upzTeile) . ')' : '');
+        // 4. UPZ-Aufschluesselung fuer die Klammer hinter der Zahl. Vorrang hat
+        //    die im Editor hinterlegte individuelle Stundenverteilung. Ist sie
+        //    leer, rechnet der Export denselben Vorschlag, den auch der Editor
+        //    anbietet - so stimmt der Plan auch dann, wenn niemand die
+        //    Erstkraft geoeffnet und gespeichert hat.
+        //
+        //    Frueher stand hier eine Aufschluesselung aus lehrer_stundentafel
+        //    ("12 Unterricht, 4 MSD"). Die ist entfallen: sie kannte keine
+        //    Klasse, konnte Klassenstunden und SVE also nicht trennen, und war
+        //    im Bestand meist gar nicht gepflegt.
+        $verteilung = trim((string)($e['upz_verteilung'] ?? ''));
+        $klammer = $verteilung !== '' ? $verteilung : elli_upz_vorschlag($conn, $erstkraft_id);
+        $upzText = $fmtStunden($e['upz']) . ($klammer !== '' ? ' (' . $klammer . ')' : '');
 
         // 5. Ersteller/Genehmiger aus den Einstellungen im Burgermenue.
         //    Ersteller = "Nachname, Titel" (schuljahrbezogen). Sind beide Felder leer,

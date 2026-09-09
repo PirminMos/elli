@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS `erstkraft` (
   `faecher`            VARCHAR(255) DEFAULT NULL,
   `textfarbe`          VARCHAR(7)   DEFAULT '#ffffff',
   `ermaessigung_grund` VARCHAR(255) DEFAULT NULL,
+  -- Frei formulierte Aufschluesselung der UPZ; steht im Export hinter der
+  -- Zahl in Klammern. Leer = der Export rechnet die Klammer selbst.
+  `upz_verteilung`     VARCHAR(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_erstkraft_schuljahr` (`schuljahr_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

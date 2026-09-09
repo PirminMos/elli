@@ -2,7 +2,12 @@
   "generated": "2026-09-09",
   "commits": [
     {
-      "hash": "57c5d1a",
+      "hash": "31b53d1",
+      "date": "2026-09-09",
+      "subject": "Feature: Individuelle Stundenverteilung der Erstkraefte"
+    },
+    {
+      "hash": "964336f",
       "date": "2026-09-09",
       "subject": "Fix: Unterschriftszeilen erkannten nur Einsatzorte der Regelstundenmasse"
     },
@@ -495,11 +500,6 @@
       "hash": "bd67671",
       "date": "2026-07-19",
       "subject": "UI: Aktivitaeten-Maske vereinfachen, Erstkraft-Label, Editor-Layout"
-    },
-    {
-      "hash": "22448ed",
-      "date": "2026-07-19",
-      "subject": "Docs: README mit Projektbeschreibung von elli fuellen"
     }
   ]
 }

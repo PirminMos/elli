@@ -630,6 +630,20 @@
           </div>
 
           <div class="input-group">
+            <label>Individuelle Stundenverteilung:</label>
+            <input v-model="currentErstkraft.upz_verteilung" type="text"
+                   placeholder="z.B. 4 Kl., 3 SVE, 4 FöÜ GS, 6 MSD"
+                   maxlength="255">
+            <span class="feld-hinweis">
+              Steht im Export hinter der UPZ-Zahl in Klammern, gezählt in
+              Unterrichtsstunden (45 Minuten = 1). Vorbelegt ist der aus dem
+              Stundenplan gerechnete Vorschlag – solange er unverändert bleibt,
+              zieht der Export bei Planänderungen automatisch mit. Erst eine
+              eigene Eingabe wird fest hinterlegt.
+            </span>
+          </div>
+
+          <div class="input-group">
             <label>Unterrichtsfächer, die nicht gelehrt werden (kommasepariert):</label>
             <input v-model="currentErstkraft.faecher" type="text" placeholder="z.B. Religion">
           </div>
@@ -4095,6 +4109,15 @@ input:checked + .slider:before {
   cursor: not-allowed;
 }
 
+/* Erklaerender Kleintext direkt unter einem Eingabefeld im Editor */
+.feld-hinweis {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.45);
+}
+
 .hint-text-small {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
@@ -6337,8 +6360,12 @@ export default {
         pflichtstunden: 26,
         ermaessigung: 0,
         upz: 0,
-        faecher: ''
+        faecher: '',
+        upz_verteilung: ''   // frei formulierte Klammer hinter der UPZ im Export
       },
+      // Zuletzt gerechneter Vorschlag, um beim Speichern zu erkennen, ob der
+      // Nutzer wirklich abgewichen ist (s. saveErstkraft).
+      upzVorschlag: '',
       currentZweitkraft: {
         id: null,
         schuljahr_id: this.currentSchuljahrId,
@@ -7036,7 +7063,10 @@ export default {
           pflichtstunden: 26, // Optional: Standardwert setzen
           ermaessigung: 0,
           upz: 26,
-          faecher: ''
+          faecher: '',
+          // Ohne Stundenplan gibt es noch nichts vorzuschlagen - das Feld
+          // fuellt sich erst beim naechsten Bearbeiten.
+          upz_verteilung: ''
         };
         this.view = 'editor';
       } else if (this.activeCategory === 'zweitkraft') {
@@ -7768,8 +7798,14 @@ export default {
               textfarbe: item.textfarbe || '#ffffff',
               pflichtstunden: Number(item.pflichtstunden) || 0,
               ermaessigung: Number(item.ermaessigung) || 0,
-              upz: Number(item.upz) || 0
+              upz: Number(item.upz) || 0,
+              upz_verteilung: item.upz_verteilung || ''
             };
+            this.upzVorschlag = '';
+            // Ist noch keine eigene Verteilung hinterlegt, einen Vorschlag aus
+            // dem Stundenplan eintragen. Eine vorhandene Eingabe bleibt
+            // unangetastet - sie ist der Grund, warum es das Feld gibt.
+            this.ladeUpzVorschlag(item.id);
           } else if (this.activeCategory === 'zweitkraft') {
             // Berufe (typ/typ2/typ3) in ein Array überführen; Alt-Format ":in"
             // auf die kanonische (weibliche) Form normalisieren. Mind. 1 Beruf.
@@ -10212,6 +10248,25 @@ export default {
       this.isQuickAddingForFach = true; // Essentiell!
       this.openQuickAdd('raum', index);
     },
+    // Vorschlag fuer die individuelle Stundenverteilung nachladen. Er landet
+    // nur in einem leeren Feld: wer selbst etwas eingetragen hat, soll es
+    // nicht durch das blosse Oeffnen des Editors verlieren. Zwischen Aufruf
+    // und Antwort kann getippt worden sein, deshalb die zweite Pruefung.
+    async ladeUpzVorschlag(erstkraftId) {
+      if (!erstkraftId) return;
+      if ((this.currentErstkraft.upz_verteilung || '').trim() !== '') return;
+      try {
+        const res = await fetch(`${API_URL}?action=get_upz_vorschlag&erstkraft_id=${erstkraftId}`);
+        const data = await res.json();
+        if (!data.success || !data.vorschlag) return;
+        if (this.currentErstkraft.id !== erstkraftId) return;
+        if ((this.currentErstkraft.upz_verteilung || '').trim() !== '') return;
+        this.upzVorschlag = data.vorschlag;
+        this.currentErstkraft.upz_verteilung = data.vorschlag;
+      } catch (e) {
+        console.error('Vorschlag für die Stundenverteilung nicht ladbar:', e);
+      }
+    },
     async saveErstkraft() {
       // Leeres Feld oder Komma-Eingabe soll die Rechnung nicht kippen
       const pflicht = parseFloat(this.currentErstkraft.pflichtstunden) || 0;
@@ -10223,11 +10278,18 @@ export default {
         return;
       }
       try {
+        // Steht im Feld unveraendert der vorgeschlagene Text, wird nichts
+        // gespeichert: Der Export rechnet den Vorschlag ohnehin selbst und
+        // bleibt so bei spaeteren Planaenderungen aktuell. Sonst wuerde schon
+        // das Oeffnen und Speichern aus einem anderen Grund - etwa wegen der
+        // Farbe - den Stand von heute einfrieren.
+        const verteilung = (this.currentErstkraft.upz_verteilung || '').trim();
         const payload = {
           ...this.currentErstkraft,
           pflichtstunden: pflicht,
           upz: upz,
           ermaessigung: ermaessigung,
+          upz_verteilung: verteilung === this.upzVorschlag.trim() ? '' : verteilung,
           schuljahr_id: this.currentSchuljahrId
         };
 
