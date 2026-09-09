@@ -2,7 +2,12 @@
   "generated": "2026-09-09",
   "commits": [
     {
-      "hash": "e9f7390",
+      "hash": "8f62f56",
+      "date": "2026-09-09",
+      "subject": "Feature: Diensteinsatzplan - Unterschriften je nach Einsatzort"
+    },
+    {
+      "hash": "82cc586",
       "date": "2026-09-09",
       "subject": "Feature: Eigene Berufe fuer Zweitkraefte anlegen"
     },
@@ -495,11 +500,6 @@
       "hash": "e1404bb",
       "date": "2026-07-14",
       "subject": "Feature: automatische Hintergrund-Backups der Datenbank"
-    },
-    {
-      "hash": "36a9deb",
-      "date": "2026-07-14",
-      "subject": "Chore: .gitattributes erzwingt LF fuer Shell-Skripte und Git-Hook"
     }
   ]
 }

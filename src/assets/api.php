@@ -5037,9 +5037,22 @@ if ($action === 'get_raum_verfuegbarkeit') {
                                    ORDER BY einsatzort");
           $stmtP->execute([$zweitkraft_id]);
           $pflichtTeile = [];
+          // Woran die Zweitkraft eingesetzt ist, entscheidet ueber die
+          // Unterschrifts- und Genehmigungszeilen (siehe unten). Massgeblich
+          // sind die Einsatzorte der Regelstundenmasse - auch die mit 0
+          // Stunden, denn der Ort ist damit trotzdem hinterlegt.
+          $hatSchule = false;
+          $hatTagesstaette = false;
           foreach ($stmtP->fetchAll(PDO::FETCH_ASSOC) as $p) {
               $ort = trim((string)$p['einsatzort']);
-              if ($ort === '' || (float)$p['summe'] <= 0) continue;
+              if ($ort === '') continue;
+              // Umlaute vereinheitlichen, damit "Tagesstaette" wie
+              // "Tagesstätte" erkannt wird; Gross-/Kleinschreibung egal.
+              $norm = strtr(mb_strtolower($ort), ['ä' => 'ae', 'ö' => 'oe', 'ü' => 'ue', 'ß' => 'ss']);
+              if (strpos($norm, 'schule') !== false)       $hatSchule = true;
+              if (strpos($norm, 'tagesstaette') !== false) $hatTagesstaette = true;
+
+              if ((float)$p['summe'] <= 0) continue;
               $pflichtTeile[] = $fmtStunden($p['summe']) . ' ' . $ort;
           }
           // Wenn Einsatzort-SOLL vorhanden: Aufschlüsselung, sonst reines UPZ-Maß
@@ -5064,7 +5077,6 @@ if ($action === 'get_raum_verfuegbarkeit') {
           $tpl->setValue('erm', $esc($fmtStunden($z['ermaessigung'])));
           $tpl->setValue('grund', $esc($z['grund_ermaessigung']));
           $tpl->setValue('erstellt', date('d.m.y'));
-          $tpl->setValue('genehmigt', date('d.m.y', strtotime('+1 day')));
 
           // Ersteller/Genehmiger aus den Einstellungen im Burgermenue. Ersteller ist
           // "Nachname, Titel" des Schuljahres; sind beide Felder leer, faellt der Fuss
@@ -5092,17 +5104,34 @@ if ($action === 'get_raum_verfuegbarkeit') {
               $tpl->setValue('mitersteller', '');
           }
           $tpl->setValue('ersteller', $esc($ersteller));
+
+          // Genehmigungszeilen: Wer unterschreibt, haengt am Einsatzort der
+          // Zweitkraft. Ist sie an einer Schule eingesetzt, genehmigt die
+          // Schulleitung; ist sie an einer Tagesstaette eingesetzt, die
+          // Tagesstaettenleitung; bei beidem beide. Passt kein Einsatzort auf
+          // eines der beiden Woerter, bleiben beide Zeilen leer - dann steht
+          // auch in der Fusszeile keine Leitungsunterschrift.
           // "Genehmiger Schulleitung" aus dem Burgermenue; der alte Sammelwert
           // bleibt Rueckfall fuer Schuljahre von vor der Umstellung.
+          $genehmigtAm = date('d.m.y', strtotime('+1 day'));
           $genehmigerName = $einzeilig($schule['genehmiger_schulleitung'] ?? '')
               ?: $einzeilig($schule['genehmiger'] ?? '');
-          $tpl->setValue('genehmiger', $esc($genehmigerName));
-          // Name hinter "durch Tagesstaettenleitung" - ebenfalls aus dem Burgermenue
-          $tpl->setValue('tagesstaettenleitung', $esc($einzeilig($schule['genehmiger_tagesstaette'] ?? '')));
+          $tagesstaetteName = $einzeilig($schule['genehmiger_tagesstaette'] ?? '');
+
+          $tpl->setValue('gen1_am',    $hatSchule ? 'Genehmigt am' : '');
+          $tpl->setValue('gen1_datum', $hatSchule ? $genehmigtAm : '');
+          $tpl->setValue('gen1_durch', $hatSchule ? $esc(rtrim('durch ' . $genehmigerName)) : '');
+
+          $tpl->setValue('gen2_am',    $hatTagesstaette ? 'Genehmigt am' : '');
+          $tpl->setValue('gen2_datum', $hatTagesstaette ? $genehmigtAm : '');
+          $tpl->setValue('gen2_durch', $hatTagesstaette
+              ? $esc(rtrim('durch Tagesstättenleitung ' . $tagesstaetteName)) : '');
 
           // Unterschriftszeile in der Fusszeile: weiblich als Standard, nur bei einer
-          // als maennlich gefuehrten Zweitkraft ohne "in".
-          $tpl->setValue('unterschrift', 'Unterschrift Mitarbeiter' . (!empty($z['maennlich']) ? '' : 'in'));
+          // als maennlich gefuehrten Zweitkraft ohne "in". Rueckfall, falls die
+          // Fusszeile unten wider Erwarten nicht ersetzt werden kann.
+          $unterschriftLabel = 'Unterschrift Mitarbeiter' . (!empty($z['maennlich']) ? '' : 'in');
+          $tpl->setValue('unterschrift', $unterschriftLabel);
 
           // Tages-Slots: Präfix + Anzahl freier Zeilen im Template + Platzhalter
           // der Tagesarbeitszeit. Die unterste Zeile jedes Tagesblocks weist die
@@ -5168,9 +5197,81 @@ if ($action === 'get_raum_verfuegbarkeit') {
               }
           }
 
-          // 5. Als Download ausliefern
+          // 5. Speichern und die Unterschriftszeilen der Fusszeile setzen
           $tmp = tempnam(sys_get_temp_dir(), 'dep');
           $tpl->saveAs($tmp);
+
+          // Fusszeile: links unterschreibt die Zweitkraft, rechts die Leitung.
+          // Welche Leitung - und ob ueberhaupt eine - haengt am Einsatzort
+          // (siehe oben). Die Linie ist ein unterer Absatzrahmen und laesst
+          // sich nicht per Platzhalter ein- und ausschalten; die Tabelle wird
+          // deshalb hier erzeugt und in word/footer2.xml eingesetzt, so wie es
+          // der Schuelerstundenplan mit seiner document.xml macht.
+          $fRpr = '<w:rPr><w:rFonts w:ascii="Comic Sans MS" w:hAnsi="Comic Sans MS"/>'
+                . '<w:sz w:val="12"/><w:szCs w:val="12"/></w:rPr>';
+          // Eine Spalte der Fusszeile: leer, oder Unterschriftslinie mit Beschriftung.
+          $sigZelle = function (int $breite, string $label) use ($fRpr, $esc) {
+              $leer  = '<w:p><w:pPr>' . $fRpr . '</w:pPr></w:p>';
+              $inhalt = $leer;
+              if ($label !== '') {
+                  $linie = '<w:p><w:pPr><w:pBdr>'
+                         . '<w:bottom w:val="single" w:sz="4" w:space="1" w:color="000000"/>'
+                         . '</w:pBdr>' . $fRpr . '</w:pPr></w:p>';
+                  $text  = '<w:p><w:pPr>' . $fRpr . '</w:pPr><w:r>' . $fRpr
+                         . '<w:t xml:space="preserve">' . $esc($label) . '</w:t></w:r></w:p>';
+                  $inhalt = $linie . $text;
+              }
+              return '<w:tc><w:tcPr><w:tcW w:w="' . $breite . '" w:type="dxa"/><w:tcBorders>'
+                   . '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/>'
+                   . '</w:tcBorders></w:tcPr>' . $inhalt . '</w:tc>';
+          };
+
+          // Gesamtbreite 14287 Twips wie in der Vorlage. Unterschreiben beide
+          // Leitungen, teilt sich die rechte Haelfte in zwei schmalere Spalten.
+          if ($hatSchule && $hatTagesstaette) {
+              $breiten = [6400, 1487, 3050, 300, 3050];
+              $zellen  = [
+                  $sigZelle(6400, $unterschriftLabel),
+                  $sigZelle(1487, ''),
+                  $sigZelle(3050, 'Unterschrift Schulleitung'),
+                  $sigZelle(300,  ''),
+                  $sigZelle(3050, 'Unterschrift Tagesstättenleitung'),
+              ];
+          } else {
+              $rechts = $hatSchule ? 'Unterschrift Schulleitung'
+                      : ($hatTagesstaette ? 'Unterschrift Tagesstättenleitung' : '');
+              $breiten = [6400, 1487, 6400];
+              $zellen  = [
+                  $sigZelle(6400, $unterschriftLabel),
+                  $sigZelle(1487, ''),
+                  $sigZelle(6400, $rechts),
+              ];
+          }
+
+          $grid = '';
+          foreach ($breiten as $b) $grid .= '<w:gridCol w:w="' . $b . '"/>';
+          $sigTabelle = '<w:tbl><w:tblPr><w:tblW w:w="14287" w:type="dxa"/><w:tblBorders>'
+                      . '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
+                      . '<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/>'
+                      . '</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar>'
+                      . '<w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>'
+                      . '</w:tblCellMar></w:tblPr><w:tblGrid>' . $grid . '</w:tblGrid>'
+                      . '<w:tr>' . implode('', $zellen) . '</w:tr></w:tbl>';
+
+          $zipF = new ZipArchive();
+          if ($zipF->open($tmp) === true) {
+              $ftr = $zipF->getFromName('word/footer2.xml');
+              // Ohne Treffer bleibt die Fusszeile der Vorlage stehen - lieber
+              // die alte Zeile als eine kaputte Datei.
+              if ($ftr !== false && preg_match('/<w:tbl>.*<\/w:tbl>/s', $ftr, $mT)) {
+                  $zipF->deleteName('word/footer2.xml');
+                  $zipF->addFromString('word/footer2.xml', str_replace($mT[0], $sigTabelle, $ftr));
+              }
+              $zipF->close();
+          }
+          // Die Datei ist nach dem Zip-Eingriff groesser oder kleiner als beim
+          // Speichern - sonst meldet Content-Length unten die alte Groesse.
+          clearstatcache(true, $tmp);
 
           $dateiname = 'Diensteinsatzplan_' . preg_replace('/[^A-Za-z0-9_\-]+/', '_', $z['name']) . '.docx';
 
