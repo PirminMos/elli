@@ -2,7 +2,12 @@
   "generated": "2026-09-10",
   "commits": [
     {
-      "hash": "5062936",
+      "hash": "47037d3",
+      "date": "2026-09-10",
+      "subject": "Feature: Bokeh-Design auch in den Listenansichten"
+    },
+    {
+      "hash": "6dad286",
       "date": "2026-09-10",
       "subject": "Feature: Startseiten-Buttons mit ruhigem Bokeh und Morgenlicht"
     },
@@ -495,11 +500,6 @@
       "hash": "bb199b9",
       "date": "2026-08-31",
       "subject": "Feature: Raum-Ueberbuchung erlauben statt hart blockieren (Backend)"
-    },
-    {
-      "hash": "ba670d1",
-      "date": "2026-08-31",
-      "subject": "Aendere Lehrerstundenplan-Export: Stunden einzeln statt zusammengefasst"
     }
   ]
 }

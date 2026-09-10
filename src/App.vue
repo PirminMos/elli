@@ -149,7 +149,7 @@
           <button
               v-for="key in ['aktivitaet-erst', 'aktivitaet-zweit', 'erstkraft', 'raum', 'schulfach', 'zweitkraft']"
               :key="key"
-              class="glass-btn start-btn"
+              class="glass-btn bokeh-btn start-btn"
               :style="{'--bokeh': startBokeh[key]}"
               @click="navigate(key)"
           >
@@ -164,7 +164,7 @@
           <button
               v-for="key in ['diensteinsatzplan', 'gesamtplan', 'lehrerstundenplan', 'raumbelegungsplan', 'schuelerstundenplan']"
               :key="key"
-              class="glass-btn start-btn start-btn--unten"
+              class="glass-btn bokeh-btn bokeh-btn--unten start-btn"
               :style="{'--bokeh': startBokeh[key]}"
               @click="navigate(key)"
           >
@@ -172,7 +172,7 @@
             <span class="btn-text" lang="de">{{ trennbar(categoryMap[key].plural) }}</span>
           </button>
 
-          <button class="glass-btn start-btn start-btn--unten" :style="{'--bokeh': startBokeh.stundentafel}"
+          <button class="glass-btn bokeh-btn bokeh-btn--unten start-btn" :style="{'--bokeh': startBokeh.stundentafel}"
                   @click="navigate('stundentafel')">
             <img :src="categoryMap['stundentafel'].icon" class="custom-icon-svg" alt="Icon">
             <span class="btn-text" lang="de">{{ trennbar(categoryMap['stundentafel'].plural) }}</span>
@@ -213,10 +213,13 @@
           <button
               v-for="item in currentItems"
               :key="item.id || item.name"
-              class="glass-btn btn-accent item-button"
+              class="glass-btn bokeh-btn item-button"
               :class="{ 'stapel-gewaehlt': stapel.aktiv && stapelEnthalten(item) }"
               @click="stapel.aktiv ? stapelUmschalten(item) : editItem(item)"
-              :style="{ background: activeCategory === 'schulfach' ? item.farbe : null }"
+              :style="{
+                '--bokeh': listenBokeh[bokehSchluessel(item)],
+                '--grund': activeCategory === 'schulfach' && item.farbe ? item.farbe : null
+              }"
           >
             <span v-if="stapel.aktiv" class="stapel-haken"
                   :class="{ 'ist-an': stapelEnthalten(item) }"></span>
@@ -3066,35 +3069,16 @@ textarea {
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
-/* Akzent-Buttons (Die grünen Buttons) */
-.btn-accent {
-  background: var(--zero);
-  /* Ein innerer Schatten lässt den Button wie ein echtes Objekt wirken */
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.bottom {
-  background: var(--secondary);
-}
-
-/* Der "Leuchteffekt" beim Drüberfahren */
-.btn-accent:hover {
-  transform: translateY(-4px) scale(1.02);
-  background: linear-gradient(135deg, #2bc057 0%, #1c8a3c 100%);
-  box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.4),
-  0 15px 30px rgba(28, 138, 60, 0.4);
-}
-
 /* Aktiver Klick-Zustand */
 .glass-btn:active {
   transform: translateY(0);
 }
 
-/* Startseiten-Buttons: ruhiges Bokeh (Muster aus startBokeh), feine
-   minzfarbene Lichtkante und ein Lichtstreif am unteren Rand wie der erste
-   Sonnenstreif am Horizont. Eigene Klasse statt .btn-accent - die steckt
-   auch in den Listenansichten und soll dort bleiben, wie sie ist. */
-.glass-btn.start-btn {
+/* Bokeh-Buttons (Startseite und Listenansichten): ruhiges Bokeh (Muster aus
+   bokehMuster), feine minzfarbene Lichtkante und ein Lichtstreif am unteren
+   Rand wie der erste Sonnenstreif am Horizont. Die Grundfarbe kommt aus
+   --grund - Gruen, bei Schulfaechern die Farbe des Fachs. */
+.glass-btn.bokeh-btn {
   --grund: #1e6c38;
   --minze: 176, 244, 204;
   --kante-a: .38;
@@ -3118,14 +3102,14 @@ textarea {
   transition: transform .35s cubic-bezier(.4, 0, .2, 1), box-shadow .35s;
 }
 
-.glass-btn.start-btn--unten {
+.glass-btn.bokeh-btn--unten {
   --grund: #1f3326;
   --kante-a: .22;
   --kante-b: .10;
 }
 
 /* Bokeh-Ebene: eigene, weichgezeichnete Schicht - Text und Icon bleiben scharf */
-.glass-btn.start-btn::before {
+.glass-btn.bokeh-btn::before {
   content: "";
   position: absolute;
   inset: -10px;
@@ -3136,7 +3120,7 @@ textarea {
 }
 
 /* Lichtstreif am unteren Rand */
-.glass-btn.start-btn::after {
+.glass-btn.bokeh-btn::after {
   content: "";
   position: absolute;
   left: 24%;
@@ -3152,10 +3136,38 @@ textarea {
   transition: left .6s cubic-bezier(.2, .7, .2, 1), right .6s cubic-bezier(.2, .7, .2, 1), opacity .6s;
 }
 
-.glass-btn.start-btn--unten::after {
+.glass-btn.bokeh-btn--unten::after {
   opacity: calc(var(--streif) * .6);
 }
 
+/* Hover: anheben, Kante leuchtet leicht, Streif waechst zur Seite, das
+   Bokeh fokussiert sanft nach. Die Hintergrundfarbe bleibt. */
+.glass-btn.bokeh-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 0 0 1px rgba(var(--minze), .16), 0 14px 30px rgba(28, 138, 60, .32);
+}
+
+.glass-btn.bokeh-btn:hover::before {
+  transform: scale(1.05);
+  filter: blur(2.6px) brightness(1.07);
+}
+
+.glass-btn.bokeh-btn:hover::after {
+  left: 8%;
+  right: 8%;
+  opacity: calc(var(--streif) + .25);
+}
+
+.glass-btn.bokeh-btn:active {
+  transform: translateY(-1px) scale(.99);
+}
+
+.glass-btn.bokeh-btn:focus-visible {
+  outline: 2px solid rgba(var(--minze), .85);
+  outline-offset: 3px;
+}
+
+/* ---- Startseite: Icon und Beschriftung ueber dem Bokeh */
 .glass-btn.start-btn .custom-icon-svg,
 .glass-btn.start-btn .btn-text {
   position: relative;
@@ -3178,33 +3190,6 @@ textarea {
   text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
 }
 
-/* Hover: anheben, Kante leuchtet leicht, Streif waechst zur Seite, das
-   Bokeh fokussiert sanft nach. Die Hintergrundfarbe bleibt. */
-.glass-btn.start-btn:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 0 0 1px rgba(var(--minze), .16), 0 14px 30px rgba(28, 138, 60, .32);
-}
-
-.glass-btn.start-btn:hover::before {
-  transform: scale(1.05);
-  filter: blur(2.6px) brightness(1.07);
-}
-
-.glass-btn.start-btn:hover::after {
-  left: 8%;
-  right: 8%;
-  opacity: calc(var(--streif) + .25);
-}
-
-.glass-btn.start-btn:active {
-  transform: translateY(-1px) scale(.99);
-}
-
-.glass-btn.start-btn:focus-visible {
-  outline: 2px solid rgba(var(--minze), .85);
-  outline-offset: 3px;
-}
-
 @media (max-width: 1100px) {
   .glass-btn.start-btn {
     gap: 10px;
@@ -3212,6 +3197,22 @@ textarea {
   }
 }
 
+/* ---- Listenansichten: Kacheln wie bisher mindestens 80 px hoch */
+.glass-btn.bokeh-btn.item-button {
+  min-height: max(80px, clamp(60px, 8vh, 90px));
+}
+
+.glass-btn.bokeh-btn.item-button .button-content-wrapper {
+  position: relative;
+  z-index: 2;
+  overflow-wrap: break-word;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+
+/* Auswahlkreis (Stapel-Export) und Loesch-X ueber Bokeh und Lichtstreif */
+.glass-btn.bokeh-btn.item-button .stapel-haken {
+  z-index: 3;
+}
 
 /* Regenbogen-Effekt */
 .btn-rainbow {
@@ -7050,61 +7051,37 @@ export default {
     stundenzahlGesperrt() {
       return !!this.mehrfachAuswahl && !this.mehrfachAuswahl.zusammenhaengend;
     },
-    // Muster der Startseiten-Buttons: ein ruhiges Bokeh, Ton in Ton mit dem
-    // Gruen - unscharfe Lichtscheiben wie auf einer betauten Morgenwiese.
-    // Jeder Button hat sein eigenes Muster, das bei jedem Laden gleich bleibt
-    // (feste Saat statt Math.random). In der Vorschau auf Lesbarkeit geprueft:
-    // weisse Schrift behaelt bei Fensterbreiten von 800 bis 1920 px mindestens
-    // 5,6 : 1 Kontrast, auch im Hover-Zustand.
+    // Muster der Startseiten-Buttons (s. bokehMuster). Feste Saat je Button:
+    // jeder sieht anders aus, bleibt aber bei jedem Laden gleich.
     // Ergebnis: Kategorie-Schluessel -> Liste radialer Verlaeufe fuer --bokeh.
     startBokeh() {
       const oben = ['aktivitaet-erst', 'aktivitaet-zweit', 'erstkraft', 'raum', 'schulfach', 'zweitkraft'];
       const unten = ['diensteinsatzplan', 'gesamtplan', 'lehrerstundenplan',
                      'raumbelegungsplan', 'schuelerstundenplan', 'stundentafel'];
-      // [r, g, b, Gewicht] - bewusst nah am Grundton, keine hellen Tupfer
-      const paletten = {
-        oben:  [[36, 120, 64, 5], [44, 134, 74, 4], [24, 90, 48, 4], [56, 148, 86, 2]],
-        unten: [[33, 64, 44, 5], [38, 74, 50, 4], [22, 40, 28, 4], [46, 86, 58, 2]]
-      };
-      // Deckkraft ueber den Radius: innen duenner, zum Rand dichter, weich auslaufend
-      const stopps = [[0, .55], [.65, .7], [.88, 1], [.96, .3], [1, 0]];
-      // Kleiner reproduzierbarer Zufallsgenerator (mulberry32)
-      const zufall = (saat) => () => {
-        saat |= 0; saat = saat + 0x6D2B79F5 | 0;
-        let t = Math.imul(saat ^ saat >>> 15, 1 | saat);
-        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-        return ((t ^ t >>> 14) >>> 0) / 4294967296;
-      };
-      const muster = (saat, istUnten) => {
-        const r = zufall(saat);
-        const palette = paletten[istUnten ? 'unten' : 'oben'];
-        const summe = palette.reduce((s, f) => s + f[3], 0);
-        const scheiben = [];
-        for (let i = 0; i < 6; i++) {
-          const radius = 24 + r() * 24;
-          const x = -5 + r() * 110;
-          const y = -25 + r() * 150;
-          let wahl = r() * summe;
-          let farbe = palette[0];
-          for (const f of palette) {
-            if ((wahl -= f[3]) <= 0) { farbe = f; break; }
-          }
-          const a = (.10 + r() * .12) * (istUnten ? .75 : 1);
-          const verlauf = stopps
-              .map(([d, v]) => `rgba(${farbe[0]},${farbe[1]},${farbe[2]},${(a * v).toFixed(3)}) ${Math.round(d * 100)}%`)
-              .join(', ');
-          scheiben.push({
-            radius,
-            css: `radial-gradient(circle ${radius.toFixed(1)}px at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${verlauf})`
-          });
-        }
-        // kleine Scheiben obenauf, grosse dahinter - wie Tropfen in verschiedener Tiefe
-        return scheiben.sort((p, q) => p.radius - q.radius).map(s => s.css).join(', ');
-      };
       const ergebnis = {};
       [...oben, ...unten].forEach((key, i) => {
-        ergebnis[key] = muster(4242 + i * 97, i >= oben.length);
+        ergebnis[key] = this.bokehMuster(4242 + i * 97, i >= oben.length);
       });
+      return ergebnis;
+    },
+    // Muster der Kacheln in den Listenansichten. Die Saat stammt aus Kategorie
+    // und ID des Eintrags - so hat jede Kachel ihr eigenes, stabiles Muster,
+    // auch wenn Eintraege dazukommen oder wegfallen. Schulfaecher behalten ihre
+    // eigene Farbe; ihr Bokeh wird Ton in Ton aus dieser Farbe abgeleitet.
+    listenBokeh() {
+      const ergebnis = {};
+      for (const item of this.currentItems || []) {
+        const schluessel = this.bokehSchluessel(item);
+        const text = `${this.activeCategory}:${schluessel}`;
+        // FNV-1a: kurzer, stabiler Hash aus dem Text
+        let saat = 2166136261;
+        for (let i = 0; i < text.length; i++) {
+          saat ^= text.charCodeAt(i);
+          saat = Math.imul(saat, 16777619);
+        }
+        const basis = this.activeCategory === 'schulfach' ? item.farbe : null;
+        ergebnis[schluessel] = this.bokehMuster(saat, false, basis);
+      }
       return ergebnis;
     },
     sliderGilt() {
@@ -9305,6 +9282,72 @@ export default {
     // als Trennstrich gezeigt. Noetig, weil die automatische Silbentrennung
     // (hyphens: auto) nicht in jedem Browser ein deutsches Woerterbuch hat -
     // ohne sie brach "Schuelerstundenplaene" an beliebiger Stelle um.
+    // Ruhiges Bokeh, Ton in Ton mit dem Grund - unscharfe Lichtscheiben wie
+    // auf einer betauten Morgenwiese. Liefert die Liste radialer Verlaeufe
+    // fuer --bokeh. Gleiche Saat ergibt immer dasselbe Muster.
+    // Auf Lesbarkeit geprueft: weisse Schrift behaelt auf dem Gruen mindestens
+    // 5,5 : 1 Kontrast, auch im Hover-Zustand.
+    //   saat      - Zahl, bestimmt Lage, Groesse und Farbe der Scheiben
+    //   istUnten  - gedaempftes Gruen (untere Startseiten-Reihe)
+    //   basis     - eigene Grundfarbe als Hex (Schulfaecher); sonst Gruen
+    bokehMuster(saat, istUnten = false, basis = null) {
+      // [r, g, b, Gewicht] - bewusst nah am Grundton, keine hellen Tupfer
+      let palette = istUnten
+          ? [[33, 64, 44, 5], [38, 74, 50, 4], [22, 40, 28, 4], [46, 86, 58, 2]]
+          : [[36, 120, 64, 5], [44, 134, 74, 4], [24, 90, 48, 4], [56, 148, 86, 2]];
+      const rgb = this.hexZuRgb(basis);
+      if (rgb) {
+        // Dieselben Abstufungen wie beim Gruen, aus der eigenen Farbe abgeleitet
+        const heller = (t) => rgb.map(c => Math.round(c + (255 - c) * t));
+        const dunkler = (f) => rgb.map(c => Math.round(c * f));
+        palette = [[...heller(.08), 5], [...heller(.18), 4], [...dunkler(.83), 4], [...heller(.27), 2]];
+      }
+      // Deckkraft ueber den Radius: innen duenner, zum Rand dichter, weich auslaufend
+      const stopps = [[0, .55], [.65, .7], [.88, 1], [.96, .3], [1, 0]];
+      // Kleiner reproduzierbarer Zufallsgenerator (mulberry32)
+      const r = (() => {
+        let s = saat;
+        return () => {
+          s |= 0; s = s + 0x6D2B79F5 | 0;
+          let t = Math.imul(s ^ s >>> 15, 1 | s);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      })();
+      const summe = palette.reduce((s, f) => s + f[3], 0);
+      const scheiben = [];
+      for (let i = 0; i < 6; i++) {
+        const radius = 24 + r() * 24;
+        const x = -5 + r() * 110;
+        const y = -25 + r() * 150;
+        let wahl = r() * summe;
+        let farbe = palette[0];
+        for (const f of palette) {
+          if ((wahl -= f[3]) <= 0) { farbe = f; break; }
+        }
+        const a = (.10 + r() * .12) * (istUnten ? .75 : 1);
+        const verlauf = stopps
+            .map(([d, v]) => `rgba(${farbe[0]},${farbe[1]},${farbe[2]},${(a * v).toFixed(3)}) ${Math.round(d * 100)}%`)
+            .join(', ');
+        scheiben.push({
+          radius,
+          css: `radial-gradient(circle ${radius.toFixed(1)}px at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${verlauf})`
+        });
+      }
+      // kleine Scheiben obenauf, grosse dahinter - wie Tropfen in verschiedener Tiefe
+      return scheiben.sort((p, q) => p.radius - q.radius).map(s => s.css).join(', ');
+    },
+    // "#1e6c38" oder "#abc" -> [r, g, b]; alles andere -> null
+    hexZuRgb(hex) {
+      const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
+      if (!m) return null;
+      const h = m[1].length === 3 ? m[1].split('').map(c => c + c).join('') : m[1];
+      return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+    },
+    // Stabiler Schluessel einer Listen-Kachel (manche Listen haben keine ID)
+    bokehSchluessel(item) {
+      return String(item.id ?? item.name ?? '');
+    },
     trennbar(text) {
       const fugen = {
         'Diensteinsatzpläne': 'Dienst\u00ADeinsatz\u00ADpläne',
