@@ -426,18 +426,26 @@
                 </div>
               </transition>
             </div>
+          </div>
 
-            <!-- Blocker wie die Mittagspause: stehen im Plan, zaehlen aber
-                 nicht auf die Stunden. Nur bei Zweitkraft-Aktivitaeten. -->
-            <label class="blocker-opt">
-              <input type="checkbox" v-model="currentActivity.zaehlt_nicht"
-                     :true-value="1" :false-value="0">
-              <span>
-                Zeitblocker – zählt nicht auf die Stunden
-                <small>z.B. Mittagspause: erscheint im Dienstplan, bleibt bei IST-Stunden
-                  und Tagesarbeitszeit außen vor.</small>
-              </span>
-            </label>
+          <!-- Blocker wie die Mittagspause: stehen im Plan, zaehlen aber nicht
+               auf die Stunden. Nur bei Zweitkraft-Aktivitaeten. Eigenes
+               Rasterfeld rechts neben dem Einsatzort: das unsichtbare Label
+               haelt die Hoehe von dessen Beschriftung, darunter steht die
+               Checkbox senkrecht mittig auf Hoehe des Auswahlfelds. -->
+          <div v-if="currentActivity.kraft_typ !== 'erst'" class="input-group">
+            <label class="invisible" aria-hidden="true">.</label>
+            <div class="blocker-zeile">
+              <label class="blocker-opt">
+                <input type="checkbox" v-model="currentActivity.zaehlt_nicht"
+                       :true-value="1" :false-value="0">
+                <span>
+                  Zeitblocker – zählt nicht auf die Stunden
+                  <small>z.B. Mittagspause: erscheint im Dienstplan, bleibt bei IST-Stunden
+                    und Tagesarbeitszeit außen vor.</small>
+                </span>
+              </label>
+            </div>
           </div>
 
           <div class="input-group full-width">
@@ -5755,14 +5763,22 @@ input:checked + .slider:before {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
+/* Zeile neben dem Einsatzort: so hoch wie das Auswahlfeld (50 px), damit
+   die Checkbox senkrecht mittig auf dessen Hoehe steht. */
+.blocker-zeile {
+  height: 50px;
+  display: flex;
+  align-items: center;
+}
+
 /* Ankreuzfeld "Zeitblocker" im Aktivitaets-Formular.
    Als "label.blocker-opt" geschrieben, weil ".input-group label" mit
    display:block sonst spezifischer waere und das Flex-Layout aushebelt. */
 .input-group label.blocker-opt {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 0;
   margin-bottom: 0;
   color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
@@ -5772,7 +5788,7 @@ input:checked + .slider:before {
 .input-group label.blocker-opt input {
   width: 16px;
   height: 16px;
-  margin-top: 2px;
+  margin: 0;
   accent-color: #a24bcf;
   cursor: pointer;
   flex: none;
