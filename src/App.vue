@@ -149,11 +149,12 @@
           <button
               v-for="key in ['aktivitaet-erst', 'aktivitaet-zweit', 'erstkraft', 'raum', 'schulfach', 'zweitkraft']"
               :key="key"
-              class="glass-btn btn-accent"
+              class="glass-btn start-btn"
+              :style="{'--bokeh': startBokeh[key]}"
               @click="navigate(key)"
           >
             <img :src="categoryMap[key].icon" class="custom-icon-svg" alt="Icon">
-            <span class="btn-text">{{ categoryMap[key].plural }}</span>
+            <span class="btn-text" lang="de">{{ trennbar(categoryMap[key].plural) }}</span>
           </button>
         </div>
 
@@ -163,16 +164,18 @@
           <button
               v-for="key in ['diensteinsatzplan', 'gesamtplan', 'lehrerstundenplan', 'raumbelegungsplan', 'schuelerstundenplan']"
               :key="key"
-              class="glass-btn btn-accent bottom"
+              class="glass-btn start-btn start-btn--unten"
+              :style="{'--bokeh': startBokeh[key]}"
               @click="navigate(key)"
           >
             <img :src="categoryMap[key].icon" class="custom-icon-svg" alt="Icon">
-            <span class="btn-text">{{ categoryMap[key].plural }}</span>
+            <span class="btn-text" lang="de">{{ trennbar(categoryMap[key].plural) }}</span>
           </button>
 
-          <button class="glass-btn btn-accent bottom" @click="navigate('stundentafel')">
+          <button class="glass-btn start-btn start-btn--unten" :style="{'--bokeh': startBokeh.stundentafel}"
+                  @click="navigate('stundentafel')">
             <img :src="categoryMap['stundentafel'].icon" class="custom-icon-svg" alt="Icon">
-            <span class="btn-text">{{ categoryMap['stundentafel'].plural }}</span>
+            <span class="btn-text" lang="de">{{ trennbar(categoryMap['stundentafel'].plural) }}</span>
           </button>
         </div>
 
@@ -3085,6 +3088,128 @@ textarea {
 /* Aktiver Klick-Zustand */
 .glass-btn:active {
   transform: translateY(0);
+}
+
+/* Startseiten-Buttons: ruhiges Bokeh (Muster aus startBokeh), feine
+   minzfarbene Lichtkante und ein Lichtstreif am unteren Rand wie der erste
+   Sonnenstreif am Horizont. Eigene Klasse statt .btn-accent - die steckt
+   auch in den Listenansichten und soll dort bleiben, wie sie ist. */
+.glass-btn.start-btn {
+  --grund: #1e6c38;
+  --minze: 176, 244, 204;
+  --kante-a: .38;
+  --kante-b: .18;
+  --streif: .45;
+  position: relative;
+  overflow: hidden;
+  height: auto;
+  min-height: clamp(60px, 8vh, 90px);
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  /* Grundfarbe innen, Lichtkante als Verlauf im Rahmen */
+  background:
+    linear-gradient(var(--grund), var(--grund)) padding-box,
+    linear-gradient(135deg,
+      rgba(var(--minze), var(--kante-a)), rgba(var(--minze), calc(var(--kante-a) * .18)) 38%,
+      rgba(var(--minze), 0) 62%, rgba(var(--minze), var(--kante-b))) border-box;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, .32);
+  transition: transform .35s cubic-bezier(.4, 0, .2, 1), box-shadow .35s;
+}
+
+.glass-btn.start-btn--unten {
+  --grund: #1f3326;
+  --kante-a: .22;
+  --kante-b: .10;
+}
+
+/* Bokeh-Ebene: eigene, weichgezeichnete Schicht - Text und Icon bleiben scharf */
+.glass-btn.start-btn::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  background-image: var(--bokeh);
+  filter: blur(2.6px);
+  transition: transform 1s cubic-bezier(.2, .7, .2, 1), filter 1s;
+  pointer-events: none;
+}
+
+/* Lichtstreif am unteren Rand */
+.glass-btn.start-btn::after {
+  content: "";
+  position: absolute;
+  left: 24%;
+  right: 24%;
+  bottom: 0;
+  height: 2px;
+  z-index: 1;
+  border-radius: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(var(--minze), 0), rgba(var(--minze), .9), rgba(var(--minze), 0));
+  box-shadow: 0 0 10px 1px rgba(var(--minze), .4);
+  opacity: var(--streif);
+  transition: left .6s cubic-bezier(.2, .7, .2, 1), right .6s cubic-bezier(.2, .7, .2, 1), opacity .6s;
+}
+
+.glass-btn.start-btn--unten::after {
+  opacity: calc(var(--streif) * .6);
+}
+
+.glass-btn.start-btn .custom-icon-svg,
+.glass-btn.start-btn .btn-text {
+  position: relative;
+  z-index: 2;
+}
+
+/* Lange Beschriftungen brechen bei schmalem Fenster in eine zweite Zeile um,
+   statt abgeschnitten zu werden - auch die kleinste Buttonhoehe (60 px) bietet
+   Platz fuer zwei Zeilen. Einzelwoerter wie "Diensteinsatzplaene" haben keine
+   Leerstelle: getrennt wird an den weichen Trennstellen aus trennbar(), ein
+   Umbruch mitten im Wort bleibt nur der letzte Rueckfall. */
+.glass-btn.start-btn .btn-text {
+  min-width: 0;
+  text-align: center;
+  line-height: 1.2;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  overflow-wrap: break-word;
+  letter-spacing: .01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+
+/* Hover: anheben, Kante leuchtet leicht, Streif waechst zur Seite, das
+   Bokeh fokussiert sanft nach. Die Hintergrundfarbe bleibt. */
+.glass-btn.start-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 0 0 1px rgba(var(--minze), .16), 0 14px 30px rgba(28, 138, 60, .32);
+}
+
+.glass-btn.start-btn:hover::before {
+  transform: scale(1.05);
+  filter: blur(2.6px) brightness(1.07);
+}
+
+.glass-btn.start-btn:hover::after {
+  left: 8%;
+  right: 8%;
+  opacity: calc(var(--streif) + .25);
+}
+
+.glass-btn.start-btn:active {
+  transform: translateY(-1px) scale(.99);
+}
+
+.glass-btn.start-btn:focus-visible {
+  outline: 2px solid rgba(var(--minze), .85);
+  outline-offset: 3px;
+}
+
+@media (max-width: 1100px) {
+  .glass-btn.start-btn {
+    gap: 10px;
+    padding: 6px 10px;
+  }
 }
 
 
@@ -6925,6 +7050,63 @@ export default {
     stundenzahlGesperrt() {
       return !!this.mehrfachAuswahl && !this.mehrfachAuswahl.zusammenhaengend;
     },
+    // Muster der Startseiten-Buttons: ein ruhiges Bokeh, Ton in Ton mit dem
+    // Gruen - unscharfe Lichtscheiben wie auf einer betauten Morgenwiese.
+    // Jeder Button hat sein eigenes Muster, das bei jedem Laden gleich bleibt
+    // (feste Saat statt Math.random). In der Vorschau auf Lesbarkeit geprueft:
+    // weisse Schrift behaelt bei Fensterbreiten von 800 bis 1920 px mindestens
+    // 5,6 : 1 Kontrast, auch im Hover-Zustand.
+    // Ergebnis: Kategorie-Schluessel -> Liste radialer Verlaeufe fuer --bokeh.
+    startBokeh() {
+      const oben = ['aktivitaet-erst', 'aktivitaet-zweit', 'erstkraft', 'raum', 'schulfach', 'zweitkraft'];
+      const unten = ['diensteinsatzplan', 'gesamtplan', 'lehrerstundenplan',
+                     'raumbelegungsplan', 'schuelerstundenplan', 'stundentafel'];
+      // [r, g, b, Gewicht] - bewusst nah am Grundton, keine hellen Tupfer
+      const paletten = {
+        oben:  [[36, 120, 64, 5], [44, 134, 74, 4], [24, 90, 48, 4], [56, 148, 86, 2]],
+        unten: [[33, 64, 44, 5], [38, 74, 50, 4], [22, 40, 28, 4], [46, 86, 58, 2]]
+      };
+      // Deckkraft ueber den Radius: innen duenner, zum Rand dichter, weich auslaufend
+      const stopps = [[0, .55], [.65, .7], [.88, 1], [.96, .3], [1, 0]];
+      // Kleiner reproduzierbarer Zufallsgenerator (mulberry32)
+      const zufall = (saat) => () => {
+        saat |= 0; saat = saat + 0x6D2B79F5 | 0;
+        let t = Math.imul(saat ^ saat >>> 15, 1 | saat);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+      const muster = (saat, istUnten) => {
+        const r = zufall(saat);
+        const palette = paletten[istUnten ? 'unten' : 'oben'];
+        const summe = palette.reduce((s, f) => s + f[3], 0);
+        const scheiben = [];
+        for (let i = 0; i < 6; i++) {
+          const radius = 24 + r() * 24;
+          const x = -5 + r() * 110;
+          const y = -25 + r() * 150;
+          let wahl = r() * summe;
+          let farbe = palette[0];
+          for (const f of palette) {
+            if ((wahl -= f[3]) <= 0) { farbe = f; break; }
+          }
+          const a = (.10 + r() * .12) * (istUnten ? .75 : 1);
+          const verlauf = stopps
+              .map(([d, v]) => `rgba(${farbe[0]},${farbe[1]},${farbe[2]},${(a * v).toFixed(3)}) ${Math.round(d * 100)}%`)
+              .join(', ');
+          scheiben.push({
+            radius,
+            css: `radial-gradient(circle ${radius.toFixed(1)}px at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${verlauf})`
+          });
+        }
+        // kleine Scheiben obenauf, grosse dahinter - wie Tropfen in verschiedener Tiefe
+        return scheiben.sort((p, q) => p.radius - q.radius).map(s => s.css).join(', ');
+      };
+      const ergebnis = {};
+      [...oben, ...unten].forEach((key, i) => {
+        ergebnis[key] = muster(4242 + i * 97, i >= oben.length);
+      });
+      return ergebnis;
+    },
     sliderGilt() {
       const key = this.selectedUniqueKey || '';
       if (key.startsWith('f')) return true;
@@ -9118,6 +9300,25 @@ export default {
       this.personModalType = 'erstkraft';
     },
     // Fach bzw. Aktivitaet einer Stunde als vergleichbare Kennung.
+    // Beschriftung der Startseiten-Buttons mit weichen Trennstellen (U+00AD)
+    // an den Wortfugen. Sie sind unsichtbar und werden nur bei einem Umbruch
+    // als Trennstrich gezeigt. Noetig, weil die automatische Silbentrennung
+    // (hyphens: auto) nicht in jedem Browser ein deutsches Woerterbuch hat -
+    // ohne sie brach "Schuelerstundenplaene" an beliebiger Stelle um.
+    trennbar(text) {
+      const fugen = {
+        'Diensteinsatzpläne': 'Dienst\u00ADeinsatz\u00ADpläne',
+        'Lehrerstundenpläne': 'Lehrer\u00ADstunden\u00ADpläne',
+        'Raumbelegungspläne': 'Raum\u00ADbelegungs\u00ADpläne',
+        'Schülerstundenpläne': 'Schüler\u00ADstunden\u00ADpläne',
+        'Stundentafel': 'Stunden\u00ADtafel',
+        'Gesamtplan': 'Gesamt\u00ADplan',
+        'Schulfächer': 'Schul\u00ADfächer',
+        'Erstkräfte': 'Erst\u00ADkräfte',
+        'Zweitkräfte': 'Zweit\u00ADkräfte'
+      };
+      return String(text || '').split(' ').map(w => fugen[w] || w).join(' ');
+    },
     terminKennung(t) {
       return t.aktivitaet_id ? 'a-' + t.aktivitaet_id : 'f-' + t.fach_id;
     },

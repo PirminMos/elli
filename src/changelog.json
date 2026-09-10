@@ -1,8 +1,13 @@
 {
-  "generated": "2026-09-09",
+  "generated": "2026-09-10",
   "commits": [
     {
-      "hash": "9e7fb58",
+      "hash": "5062936",
+      "date": "2026-09-10",
+      "subject": "Feature: Startseiten-Buttons mit ruhigem Bokeh und Morgenlicht"
+    },
+    {
+      "hash": "e393fd7",
       "date": "2026-09-09",
       "subject": "Feature: Mehrere Stunden per Aufziehen gemeinsam bearbeiten"
     },
@@ -495,11 +500,6 @@
       "hash": "ba670d1",
       "date": "2026-08-31",
       "subject": "Aendere Lehrerstundenplan-Export: Stunden einzeln statt zusammengefasst"
-    },
-    {
-      "hash": "00c7b69",
-      "date": "2026-07-19",
-      "subject": "Docs: anfaengerfreundliche Windows-Installationsanleitung"
     }
   ]
 }
